@@ -7,7 +7,8 @@ Original prompt: Поруч з папкою, де цей сайт зараз, з
 - 2026-06-22: Changed the copied app so the teacher panel is enabled by default on the public Pages version, with `#student` still available for a student-only view.
 - 2026-06-22: Verified the static copy locally on port 8791: default teacher mode, `#student` mode, 14 levels, Blockly workspace, no browser console errors, no horizontal overflow, and an open teacher drawer that overlays without resizing board/code.
 - 2026-06-22: Ran the develop-web-game Playwright client and inspected its screenshot; removed generated `output/` artifacts before repository setup.
+- 2026-06-22: Created public repository `ArTeGaS/CodeBlocks`, enabled GitHub Pages from `main` `/`, and verified `https://artegas.github.io/CodeBlocks/` returns `200 OK`, loads Blockly, shows teacher mode by default, and has no browser console errors in the smoke test.
 
 ## Next
 
-- Create or reuse `ArTeGaS/CodeBlocks`, push the copy, enable GitHub Pages, and verify the public URL.
+- If the live game is edited again, rerun the local and public smoke checks before class.
