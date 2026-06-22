@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="uk">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>CodeBlocks: Код-робот у підземеллі</title>
+    <link rel="stylesheet" href="styles.css?v=20260622-codeblocks-pages-1">
+    <script src="vendor/blockly/blockly.min.js"></script>
+    <script src="vendor/blockly/msg/js/uk.js"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <h1>Код-робот</h1>
+          <p id="levelHint" class="hint">Склади алгоритм.</p>
+        </div>
+        <div class="level-strip">
+          <label for="levelSelect">Рівень</label>
+          <select id="levelSelect" aria-label="Вибір рівня"></select>
+        </div>
+        <div class="run-strip" aria-label="Керування запуском">
+          <button id="runBtn" class="primary" type="button">▶ Запуск</button>
+          <button id="stepBtn" type="button">Крок</button>
+          <button id="pauseBtn" type="button">Пауза</button>
+          <button id="resetLevelBtn" type="button">Скинути</button>
+          <button id="clearCodeBtn" type="button">Очистити</button>
+        </div>
+      </header>
+
+      <main class="game-layout">
+        <section class="board-area" aria-label="Поле гри">
+          <div class="status-row">
+            <div id="levelTitle" class="level-title">Рівень</div>
+            <div id="messageBox" class="message neutral" role="status">Готово.</div>
+          </div>
+          <div id="gameGrid" class="game-grid" aria-label="Поле гри"></div>
+        </section>
+
+        <section class="code-area" aria-label="Алгоритм">
+          <div class="workspace-head">
+            <h2>Алгоритм</h2>
+            <span>Перетягни блоки й з'єднай їх</span>
+          </div>
+          <div id="blocklyDiv" class="blockly-workspace" aria-label="Редактор блоків"></div>
+        </section>
+
+        <aside class="palette-area" aria-label="Інструменти">
+          <h2>Інструменти</h2>
+          <details id="teacherPanel" class="teacher-tools">
+            <summary>Для викладача</summary>
+            <div class="teacher-actions">
+              <button id="loadSolutionBtn" type="button">Вставити розв'язок</button>
+              <button id="resetProgressBtn" type="button">Скинути прогрес</button>
+              <button id="fullClearBtn" type="button">Повне очищення</button>
+            </div>
+            <div id="solutionBox" class="solution-box"></div>
+          </details>
+        </aside>
+      </main>
+    </div>
+
+    <script src="script.js?v=20260622-codeblocks-pages-1"></script>
+  </body>
+</html>
