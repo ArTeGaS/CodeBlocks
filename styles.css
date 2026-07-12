@@ -466,6 +466,11 @@ select, input {
   will-change: transform;
 }
 
+.game-grid.grid-huge .robot-marker,
+.game-grid.grid-huge .grid-actor {
+  transition-duration: 170ms;
+}
+
 .robot-marker .sprite.robot {
   filter: drop-shadow(0 4px 4px rgba(20, 43, 55, .28));
 }
