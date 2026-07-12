@@ -23,8 +23,17 @@ body {
 }
 
 button, select, input { font: inherit; }
-button { cursor: pointer; }
+button {
+  cursor: pointer;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, transform 140ms ease;
+}
 button:disabled, select:disabled, input:disabled { cursor: not-allowed; opacity: .58; }
+
+@media (hover: hover) {
+  button:not(:disabled):hover { transform: translateY(-1px); }
+}
+
+button:not(:disabled):active { transform: translateY(1px); }
 
 .app-shell {
   min-height: 100vh;
@@ -176,6 +185,7 @@ select, input {
 
 .message.success { border-color: var(--green); color: #0d7348; }
 .message.error { border-color: var(--red); color: #a33131; }
+.message { transition: border-color 160ms ease, color 160ms ease, background-color 160ms ease; }
 
 .game-grid {
   --grid-cols: 10;
@@ -184,6 +194,7 @@ select, input {
   background: #354852;
   border: 5px solid #263943;
   border-radius: 8px;
+  contain: layout paint style;
   display: grid;
   gap: 0;
   grid-template-columns: repeat(var(--grid-cols), 1fr);
@@ -205,6 +216,7 @@ select, input {
   padding: 1px;
   position: relative;
   overflow: hidden;
+  contain: layout paint;
 }
 
 .cell::after {
@@ -382,6 +394,32 @@ select, input {
   transform: rotate(45deg);
 }
 
+.tile-token.sprite-token {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  height: 92%;
+  min-width: 92%;
+  overflow: visible;
+  transform: none;
+}
+
+.tile-token.floor-button.sprite-token { height: 82%; min-width: 82%; }
+.tile-token.crate.sprite-token { height: 74%; min-width: 74%; }
+.tile-token.enemy.sprite-token { height: 78%; min-width: 78%; }
+.tile-token.trap.sprite-token { height: 88%; min-width: 88%; }
+.tile-token.bridge.sprite-token, .tile-token.bridge-off.sprite-token { height: 96%; min-width: 96%; }
+.tile-token.gate.sprite-token { height: 96%; min-width: 90%; }
+
+.tile-sprite {
+  display: block;
+  height: 100%;
+  max-width: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  width: 100%;
+}
+
 .numbered-crystal {
   align-items: center;
   display: grid;
@@ -425,6 +463,7 @@ select, input {
   top: 0;
   transition: transform 360ms cubic-bezier(.2, .82, .2, 1);
   z-index: 10;
+  will-change: transform;
 }
 
 .robot-marker .sprite.robot {
@@ -468,14 +507,127 @@ select, input {
   transform: rotate(270deg);
 }
 
+.grid-actor {
+  align-items: center;
+  display: grid;
+  justify-items: center;
+  left: 0;
+  pointer-events: none;
+  position: absolute;
+  top: 0;
+  transition: transform 340ms cubic-bezier(.2, .82, .2, 1);
+  will-change: transform;
+}
+
+.crate-actor { z-index: 8; }
+.moving-enemy-actor { z-index: 9; }
+.grid-actor .tile-token { grid-area: 1 / 1; }
+
+.sprite.key {
+  animation: item-float 2.8s ease-in-out infinite;
+  transform-origin: 50% 60%;
+}
+
+.sprite.crystal, .numbered-crystal {
+  animation: crystal-idle 2.4s ease-in-out infinite;
+  transform-origin: 50% 68%;
+}
+
+.moving-enemy-actor:not(.is-moving) .tile-sprite {
+  animation: patrol-idle 1.3s ease-in-out infinite;
+}
+
+.crate-actor.is-moving .tile-sprite { animation: crate-settle 340ms ease-out; }
+.moving-enemy-actor.is-moving .tile-sprite { animation: patrol-step 340ms ease-out; }
+.tile-token.just-activated { animation: activate-pop 440ms ease-out; }
+.level-enter { animation: level-enter 240ms ease-out; }
+
 @keyframes robot-step {
   0% { transform: scale(.92); }
   55% { transform: scale(1.08); }
   100% { transform: scale(1); }
 }
 
+@keyframes item-float {
+  0%, 100% { transform: translateY(0) rotate(-1deg); }
+  50% { transform: translateY(-5%) rotate(1deg); }
+}
+
+@keyframes crystal-idle {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-4%) scale(1.04); }
+}
+
+@keyframes patrol-idle {
+  0%, 100% { transform: translateX(-2%); }
+  50% { transform: translateX(2%); }
+}
+
+@keyframes crate-settle {
+  0% { transform: scale(.9); }
+  65% { transform: scale(1.06); }
+  100% { transform: scale(1); }
+}
+
+@keyframes patrol-step {
+  0% { transform: scale(.92); }
+  55% { transform: scale(1.08); }
+  100% { transform: scale(1); }
+}
+
+@keyframes activate-pop {
+  0% { opacity: .5; transform: scale(.72); }
+  65% { opacity: 1; transform: scale(1.12); }
+  100% { transform: scale(1); }
+}
+
+@keyframes level-enter {
+  from { opacity: .55; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 @keyframes failure-pulse {
   50% { filter: brightness(1.45); }
+}
+
+.game-grid.grid-huge .cell {
+  border-radius: 2px;
+  box-shadow: none;
+  contain: strict;
+}
+
+.game-grid.grid-huge .sprite.key,
+.game-grid.grid-huge .sprite.crystal,
+.game-grid.grid-huge .numbered-crystal,
+.game-grid.grid-huge .moving-enemy-actor .tile-sprite {
+  animation: none;
+}
+
+.low-motion .sprite.key,
+.low-motion .sprite.crystal,
+.low-motion .numbered-crystal,
+.low-motion .moving-enemy-actor .tile-sprite,
+.low-motion .crate-actor .tile-sprite,
+.low-motion .tile-token.just-activated,
+.low-motion .level-enter,
+.low-motion .robot-marker .sprite.robot {
+  animation: none;
+}
+
+.low-motion .robot-marker,
+.low-motion .grid-actor {
+  transition-duration: 120ms;
+}
+
+.low-motion .robot-marker .sprite.robot { filter: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: .001ms !important;
+  }
 }
 
 .workspace-head {

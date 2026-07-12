@@ -151,6 +151,16 @@
     doorOpen: "assets/svg/door-open.svg",
     crystal: "assets/svg/crystal.svg",
     treasure: "assets/svg/treasure.svg",
+    crate: "assets/svg/crate.svg",
+    buttonOff: "assets/svg/button-off.svg",
+    buttonOn: "assets/svg/button-on.svg",
+    gateClosed: "assets/svg/gate-closed.svg",
+    gateOpen: "assets/svg/gate-open.svg",
+    bridge: "assets/svg/bridge.svg",
+    bridgeOff: "assets/svg/bridge-off.svg",
+    enemy: "assets/svg/enemy.svg",
+    enemyMoving: "assets/svg/enemy-moving.svg",
+    trap: "assets/svg/trap.svg",
   };
 
   function b(type, args = {}, body = [], elseBody = []) {
@@ -1415,6 +1425,9 @@
     completed: new Set(),
     insertPath: [],
     visualRobot: null,
+    visualCrates: null,
+    visualEnemies: null,
+    visualPressedButtons: null,
   };
 
   const els = {
@@ -1513,6 +1526,16 @@
         els.paletteArea = null;
       }
     }
+  }
+
+  function applyMotionProfile() {
+    const requested = new URLSearchParams(root.location?.search || "").get("motion");
+    const prefersReduced = root.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches || false;
+    const lowCoreCount = Number.isFinite(navigator.hardwareConcurrency) && navigator.hardwareConcurrency <= 4;
+    const lowMemory = Number.isFinite(navigator.deviceMemory) && navigator.deviceMemory <= 4;
+    const lowMotion = requested === "low" || (requested !== "full" && (prefersReduced || lowCoreCount || lowMemory));
+    document.body.classList.toggle("low-motion", lowMotion);
+    document.body.dataset.motionProfile = lowMotion ? "low" : "full";
   }
 
   function saveProgress() {
@@ -1637,6 +1660,9 @@
     state.isRunning = false;
     state.insertPath = [];
     state.visualRobot = null;
+    state.visualCrates = null;
+    state.visualEnemies = null;
+    state.visualPressedButtons = null;
     if (blocklyWorkspace) {
       blocklyWorkspace.updateToolbox(buildToolbox(state.currentLevel));
       setBlocklyCommands(loadCommandsForLevel(index), { persist: false });
@@ -1646,6 +1672,7 @@
     els.levelHint.textContent = state.currentLevel.hint;
     showMessage("Склади алгоритм.", "neutral");
     renderAll();
+    animateLevelChange();
     if (options.persist !== false) {
       saveProgress();
       recordAction("levelLoaded");
@@ -1658,6 +1685,15 @@
     if (isTeacherAccess) renderSolution();
     if (blocklyWorkspace) syncCommandsFromBlockly();
     renderLearningStatus();
+  }
+
+  function animateLevelChange() {
+    [els.grid, els.blocklyDiv].filter(Boolean).forEach((element) => {
+      element.classList.remove("level-enter");
+      void element.offsetWidth;
+      element.classList.add("level-enter");
+      root.setTimeout(() => element.classList.remove("level-enter"), 260);
+    });
   }
 
   const BLOCKLY_TYPE_BY_COMMAND = {
@@ -2025,58 +2061,201 @@
     });
   }
 
+  function positionSet(positions = []) {
+    return new Set(positions.map(positionKey));
+  }
+
+  function positionMap(positions = []) {
+    return new Map(positions.map((item) => [positionKey(item), item]));
+  }
+
+  function createRenderIndex(level, runState) {
+    const toggles = positionMap(level.toggleBridges);
+    const activeBridges = positionSet(level.bridges);
+    for (const bridge of level.toggleBridges || []) {
+      if (isButtonPressed(runState, bridge.buttonId)) activeBridges.add(positionKey(bridge));
+    }
+    const numbered = positionMap(
+      (level.numberedCrystals || []).filter((crystal) => !runState.collectedCrystals.includes(crystal.number)),
+    );
+    return {
+      walls: positionSet(level.walls),
+      safePath: Array.isArray(level.safePath) ? positionSet(level.safePath) : null,
+      abyss: positionSet(level.abyss),
+      water: positionSet(level.water),
+      lava: positionSet(level.lava),
+      activeBridges,
+      toggles,
+      buttons: positionMap(level.buttons),
+      gates: positionMap(level.gates),
+      enemies: positionSet(level.enemies),
+      traps: positionSet(level.traps),
+      patrolTrack: positionSet((level.movingEnemies || []).flatMap((enemy) => enemy.path)),
+      numbered,
+      fixedObjects: positionSet([
+        level.key,
+        level.door,
+        level.crystal,
+        ...(level.crates || []),
+        ...runState.crates,
+        ...(level.buttons || []),
+        ...(level.gates || []),
+        ...(level.toggleBridges || []),
+        ...(level.movingEnemies || []).flatMap((enemy) => enemy.path),
+        ...(level.numberedCrystals || []),
+      ].filter(Boolean)),
+    };
+  }
+
+  function isAbyssForRender(index, key) {
+    if (index.abyss.has(key)) return true;
+    if (!index.safePath || index.safePath.has(key)) return false;
+    if (index.walls.has(key) || index.activeBridges.has(key)) return false;
+    if (index.water.has(key) || index.lava.has(key)) return false;
+    if (index.enemies.has(key) || index.traps.has(key) || index.fixedObjects.has(key)) return false;
+    return true;
+  }
+
   function renderGrid() {
     els.grid.innerHTML = "";
     const level = state.runState.level;
     const width = levelWidth(level);
     const height = levelHeight(level);
+    const trail = new Set(state.runState.trail.map(positionKey));
+    const renderIndex = createRenderIndex(level, state.runState);
+    const sensorKey = state.sensorPos ? positionKey(state.sensorPos) : null;
+    const failureKey = state.failurePos ? positionKey(state.failurePos) : null;
+    const keyKey = level.key ? positionKey(level.key) : null;
+    const doorKey = level.door ? positionKey(level.door) : null;
+    const crystalKey = level.crystal ? positionKey(level.crystal) : null;
+    const largeGrid = width >= 20;
+    const fragment = document.createDocumentFragment();
     els.grid.style.setProperty("--grid-cols", width);
     els.grid.style.setProperty("--grid-rows", height);
     els.grid.style.aspectRatio = `${width} / ${height}`;
+    els.grid.classList.toggle("grid-large", width >= 20);
+    els.grid.classList.toggle("grid-huge", width >= 30);
     for (let y = 0; y < height; y += 1) {
       for (let x = 0; x < width; x += 1) {
         const pos = { x, y };
+        const key = positionKey(pos);
         const cell = document.createElement("div");
-        cell.className = "cell";
-        cell.classList.add((x + y) % 2 === 0 ? "shade-a" : "shade-b");
-        if ((x * 3 + y * 5) % 11 === 0) cell.classList.add("small-crack");
+        const cellClasses = ["cell"];
+        if (!largeGrid) cellClasses.push((x + y) % 2 === 0 ? "shade-a" : "shade-b");
+        if (!largeGrid && (x * 3 + y * 5) % 11 === 0) cellClasses.push("small-crack");
         cell.dataset.x = String(x);
         cell.dataset.y = String(y);
-        if (state.runState.trail.some((point) => samePos(point, pos))) cell.classList.add("robot-trail");
-        if (samePos(state.sensorPos, pos)) cell.classList.add("sensor-check", state.sensorResult ? "sensor-true" : "sensor-false");
-        if (samePos(state.failurePos, pos)) cell.classList.add("failure-cell");
-        if (isAbyss(level, pos, state.runState)) cell.classList.add("terrain-abyss");
-        if (hasTile(level, "water", pos)) cell.classList.add("terrain-water");
-        if (hasTile(level, "lava", pos)) cell.classList.add("terrain-lava");
-        if ((level.movingEnemies || []).some((enemy) => enemy.path.some((tile) => samePos(tile, pos)))) {
-          cell.classList.add("patrol-track");
+        if (trail.has(key)) cellClasses.push("robot-trail");
+        if (sensorKey === key) cellClasses.push("sensor-check", state.sensorResult ? "sensor-true" : "sensor-false");
+        if (failureKey === key) cellClasses.push("failure-cell");
+        if (isAbyssForRender(renderIndex, key)) cellClasses.push("terrain-abyss");
+        if (renderIndex.water.has(key)) cellClasses.push("terrain-water");
+        if (renderIndex.lava.has(key)) cellClasses.push("terrain-lava");
+        if (renderIndex.patrolTrack.has(key)) cellClasses.push("patrol-track");
+        if (renderIndex.walls.has(key)) cellClasses.push("wall-cell");
+        cell.className = cellClasses.join(" ");
+
+        const toggleBridge = renderIndex.toggles.get(key);
+        if (renderIndex.activeBridges.has(key)) {
+          const bridge = addTileSprite(cell, "bridge", "міст", assetMap.bridge);
+          markNewActivation(bridge, toggleBridge?.buttonId);
         }
-        if (isBridge(level, pos, state.runState)) addTileToken(cell, "bridge", "міст", "=");
-        else if (toggleBridgeAt(level, pos)) addTileToken(cell, "bridge-off", "вимкнений міст", "×");
-        if (isWall(level, pos)) cell.classList.add("wall-cell");
-        const button = buttonAt(level, pos);
+        else if (toggleBridge) addTileSprite(cell, "bridge-off", "вимкнений міст", assetMap.bridgeOff);
+        const button = renderIndex.buttons.get(key);
         if (button) {
           const pressed = isButtonPressed(state.runState, button.id);
-          addTileToken(cell, `floor-button ${pressed ? "pressed" : ""}`, pressed ? "кнопка активована" : "кнопка", "●");
+          const buttonSprite = addTileSprite(
+            cell,
+            `floor-button ${pressed ? "pressed" : ""}`,
+            pressed ? "кнопка активована" : "кнопка",
+            pressed ? assetMap.buttonOn : assetMap.buttonOff,
+          );
+          markNewActivation(buttonSprite, pressed ? button.id : null);
         }
-        const gate = gateAt(level, pos);
+        const gate = renderIndex.gates.get(key);
         if (gate) {
           const open = isButtonPressed(state.runState, gate.buttonId);
-          addTileToken(cell, `gate ${open ? "open" : "closed"}`, open ? "відкриті ворота" : "закриті ворота", open ? "↔" : "▥");
+          const gateSprite = addTileSprite(
+            cell,
+            `gate ${open ? "open" : "closed"}`,
+            open ? "відкриті ворота" : "закриті ворота",
+            open ? assetMap.gateOpen : assetMap.gateClosed,
+          );
+          markNewActivation(gateSprite, open ? gate.buttonId : null);
         }
-        if (samePos(level.door, pos)) addSprite(cell, state.runState.doorOpen ? assetMap.doorOpen : assetMap.doorClosed, "двері", "door");
-        if (level.key && !state.runState.keyTaken && samePos(level.key, pos)) addSprite(cell, assetMap.key, "ключ", "key");
-        if (samePos(level.crystal, pos)) addSprite(cell, assetMap.crystal, "кристал", "crystal");
-        const numberedCrystal = numberedCrystalAt(state.runState, pos);
+        if (doorKey === key) addSprite(cell, state.runState.doorOpen ? assetMap.doorOpen : assetMap.doorClosed, "двері", "door");
+        if (!state.runState.keyTaken && keyKey === key) addSprite(cell, assetMap.key, "ключ", "key");
+        if (crystalKey === key) addSprite(cell, assetMap.crystal, "кристал", "crystal");
+        const numberedCrystal = renderIndex.numbered.get(key);
         if (numberedCrystal) addNumberedCrystal(cell, numberedCrystal);
-        if (hasTile(level, "traps", pos)) addTileToken(cell, "trap", "пастка", "×");
-        if (hasTile(level, "enemies", pos)) addTileToken(cell, "enemy", "ворог", "!");
-        if (movingEnemyAt(state.runState, pos)) addTileToken(cell, "enemy moving", "рухомий патруль", "↕");
-        if (crateIndexAt(state.runState, pos) >= 0) addTileToken(cell, "crate", "ящик", "▣");
-        els.grid.appendChild(cell);
+        if (renderIndex.traps.has(key)) addTileSprite(cell, "trap", "пастка", assetMap.trap);
+        if (renderIndex.enemies.has(key)) addTileSprite(cell, "enemy", "ворог", assetMap.enemy);
+        fragment.appendChild(cell);
       }
     }
+    els.grid.appendChild(fragment);
+    renderCrateMarkers();
+    renderMovingEnemyMarkers();
     renderRobotMarker();
+    state.visualPressedButtons = new Set(state.runState.pressedButtons);
+  }
+
+  function positionKey(pos) {
+    return `${pos.x},${pos.y}`;
+  }
+
+  function markNewActivation(element, buttonId) {
+    if (!buttonId || !state.visualPressedButtons) return;
+    if (!state.visualPressedButtons.has(buttonId)) element.classList.add("just-activated");
+  }
+
+  function renderCrateMarkers() {
+    const current = state.runState.crates.map((crate) => ({ ...crate }));
+    const previous = state.visualCrates || current;
+    current.forEach((crate, index) => {
+      const before = previous[index] || crate;
+      const actor = createGridActor("crate-actor", "crate", "ящик", assetMap.crate);
+      els.grid.appendChild(actor);
+      placeGridActor(actor, before, false);
+      requestAnimationFrame(() => {
+        actor.classList.toggle("is-moving", !samePos(before, crate));
+        placeGridActor(actor, crate, true);
+      });
+    });
+    state.visualCrates = current;
+  }
+
+  function renderMovingEnemyMarkers() {
+    const current = state.runState.movingEnemies.map((enemy) => ({ ...enemy.path[enemy.index] }));
+    const previous = state.visualEnemies || current;
+    current.forEach((enemy, index) => {
+      const before = previous[index] || enemy;
+      const actor = createGridActor("moving-enemy-actor", "enemy moving", "рухомий патруль", assetMap.enemyMoving);
+      els.grid.appendChild(actor);
+      placeGridActor(actor, before, false);
+      requestAnimationFrame(() => {
+        actor.classList.toggle("is-moving", !samePos(before, enemy));
+        placeGridActor(actor, enemy, true);
+      });
+    });
+    state.visualEnemies = current;
+  }
+
+  function createGridActor(actorClass, spriteClass, label, src) {
+    const actor = document.createElement("div");
+    actor.className = `grid-actor ${actorClass}`;
+    actor.setAttribute("aria-hidden", "true");
+    actor.appendChild(createTileSprite(spriteClass, label, src));
+    return actor;
+  }
+
+  function placeGridActor(actor, pos, animate) {
+    const cell = els.grid.querySelector(`.cell[data-x="${pos.x}"][data-y="${pos.y}"]`);
+    if (!cell) return;
+    actor.style.transition = animate ? "" : "none";
+    actor.style.width = `${cell.offsetWidth}px`;
+    actor.style.height = `${cell.offsetHeight}px`;
+    actor.style.transform = `translate(${cell.offsetLeft}px, ${cell.offsetTop}px)`;
   }
 
   function renderRobotMarker() {
@@ -2097,22 +2276,14 @@
     marker.appendChild(arrow);
     els.grid.appendChild(marker);
 
-    placeRobotMarker(marker, previous, false);
+    const changed = !samePos(previous, current) || previous.dir !== current.dir;
+    placeGridActor(marker, previous, false);
     requestAnimationFrame(() => {
-      marker.className = `robot-marker dir-${current.dir} is-moving`;
+      marker.className = `robot-marker dir-${current.dir}${changed ? " is-moving" : ""}`;
       img.src = assetMap[`robot${cap(current.dir)}`];
-      placeRobotMarker(marker, current, true);
+      placeGridActor(marker, current, true);
     });
     state.visualRobot = current;
-  }
-
-  function placeRobotMarker(marker, robot, animate) {
-    const cell = els.grid.querySelector(`.cell[data-x="${robot.x}"][data-y="${robot.y}"]`);
-    if (!cell) return;
-    marker.style.transition = animate ? "" : "none";
-    marker.style.width = `${cell.offsetWidth}px`;
-    marker.style.height = `${cell.offsetHeight}px`;
-    marker.style.transform = `translate(${cell.offsetLeft}px, ${cell.offsetTop}px)`;
   }
 
   function addSprite(cell, src, alt, className) {
@@ -2129,6 +2300,24 @@
     token.setAttribute("aria-label", label);
     token.textContent = text;
     cell.appendChild(token);
+  }
+
+  function addTileSprite(cell, className, label, src) {
+    const token = createTileSprite(className, label, src);
+    cell.appendChild(token);
+    return token;
+  }
+
+  function createTileSprite(className, label, src) {
+    const token = document.createElement("span");
+    token.className = `tile-token sprite-token ${className}`;
+    token.setAttribute("aria-label", label);
+    const img = document.createElement("img");
+    img.className = "tile-sprite";
+    img.src = src;
+    img.alt = "";
+    token.appendChild(img);
+    return token;
   }
 
   function addNumberedCrystal(cell, crystal) {
@@ -2381,6 +2570,9 @@
     state.sensorResult = null;
     state.failurePos = null;
     state.visualRobot = null;
+    state.visualCrates = null;
+    state.visualEnemies = null;
+    state.visualPressedButtons = null;
     highlightActiveBlock();
   }
 
@@ -2622,6 +2814,9 @@
     state.sensorResult = null;
     state.failurePos = null;
     state.visualRobot = null;
+    state.visualCrates = null;
+    state.visualEnemies = null;
+    state.visualPressedButtons = null;
     highlightActiveBlock();
     if (clearCode) clearBlocklyWorkspace();
     syncCommandsFromBlockly();
@@ -2751,6 +2946,7 @@
       activeBlockId: state.activeBlockId,
       activeBlockType: state.activeBlockType,
       executionStatus: state.executionStatus,
+      motionProfile: document.body.dataset.motionProfile || "full",
       sensor: state.sensorPos ? { position: state.sensorPos, result: state.sensorResult } : null,
       failure: state.failurePos,
       trail: state.runState.trail,
@@ -2775,6 +2971,7 @@
   }
 
   async function init() {
+    applyMotionProfile();
     applyAccessMode(await resolveTeacherAccess());
     populateLevelSelect();
     loadProgress();
