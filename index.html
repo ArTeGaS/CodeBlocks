@@ -3,8 +3,8 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>CodeBlocks: Код-робот у підземеллі</title>
-    <link rel="stylesheet" href="styles.css?v=20260622-codeblocks-pages-1">
+    <title>Код-робот у підземеллі</title>
+    <link rel="stylesheet" href="styles.css?v=20260712-campaign-23-1">
     <script src="vendor/blockly/blockly.min.js"></script>
     <script src="vendor/blockly/msg/js/uk.js"></script>
   </head>
@@ -40,7 +40,11 @@
         <section class="code-area" aria-label="Алгоритм">
           <div class="workspace-head">
             <h2>Алгоритм</h2>
-            <span>Перетягни блоки й з'єднай їх</span>
+            <div class="workspace-meta" aria-live="polite">
+              <span id="blockBudget" class="learning-chip">Блоки: 0</span>
+              <span id="energyStatus" class="learning-chip energy-chip" hidden>Енергія: 0</span>
+              <span id="executionStatus" class="learning-chip execution-chip">Готово</span>
+            </div>
           </div>
           <div id="blocklyDiv" class="blockly-workspace" aria-label="Редактор блоків"></div>
         </section>
@@ -60,6 +64,6 @@
       </main>
     </div>
 
-    <script src="script.js?v=20260622-codeblocks-pages-1"></script>
+    <script src="script.js?v=20260712-campaign-23-1"></script>
   </body>
 </html>

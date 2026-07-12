@@ -223,10 +223,40 @@ select, input {
   background: none;
 }
 
+.cell.patrol-track::before {
+  border: 2px dashed rgba(38, 55, 70, .45);
+  content: "";
+  inset: 18%;
+  pointer-events: none;
+  position: absolute;
+  z-index: 1;
+}
+
 .cell.wall-cell {
   background: #51616a;
   border-color: #263943;
   box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .12);
+}
+
+.cell.robot-trail {
+  box-shadow: inset 0 0 0 3px rgba(21, 155, 100, .28);
+}
+
+.cell.sensor-check {
+  outline: 4px solid #f2c94c;
+  outline-offset: -4px;
+  z-index: 5;
+}
+
+.cell.sensor-check.sensor-false {
+  outline-color: #d84a4a;
+}
+
+.cell.failure-cell {
+  animation: failure-pulse .55s ease-in-out 2;
+  outline: 4px solid #d84a4a;
+  outline-offset: -4px;
+  z-index: 6;
 }
 
 .sprite {
@@ -270,6 +300,7 @@ select, input {
   display: inline-flex;
   font-size: clamp(10px, 1.45vw, 21px);
   font-weight: 950;
+  grid-area: 1 / 1;
   height: 72%;
   justify-content: center;
   line-height: 1;
@@ -284,11 +315,64 @@ select, input {
   color: #f8df99;
 }
 
+.tile-token.bridge-off {
+  background: rgba(36, 47, 55, .78);
+  border-color: #f2c94c;
+  color: #f2c94c;
+}
+
+.tile-token.floor-button {
+  background: #d9e1e5;
+  border-color: #4d606b;
+  border-radius: 50%;
+  color: #7c8d96;
+  height: 86%;
+  min-width: 86%;
+  z-index: 2;
+}
+
+.tile-token.floor-button.pressed {
+  background: #d9f3df;
+  border-color: #177a4d;
+  color: #159b64;
+}
+
+.tile-token.gate {
+  background: #465864;
+  border-color: #1e2d35;
+  color: #f2c94c;
+  height: 88%;
+  min-width: 76%;
+}
+
+.tile-token.gate.open {
+  background: rgba(217, 243, 223, .82);
+  border-color: #159b64;
+  color: #159b64;
+  opacity: .72;
+}
+
+.tile-token.crate {
+  background: #c6904a;
+  border-color: #5d3b17;
+  box-shadow: inset 0 0 0 3px rgba(255, 239, 191, .38);
+  color: #fff1bd;
+  height: 70%;
+  min-width: 70%;
+  z-index: 5;
+}
+
 .tile-token.enemy {
   background: #2b3340;
   border-color: #f2c94c;
   color: #f2c94c;
   border-radius: 50%;
+}
+
+.tile-token.enemy.moving {
+  background: #253846;
+  border-color: #ffdd57;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, .62);
 }
 
 .tile-token.trap {
@@ -390,12 +474,57 @@ select, input {
   100% { transform: scale(1); }
 }
 
+@keyframes failure-pulse {
+  50% { filter: brightness(1.45); }
+}
+
 .workspace-head {
-  align-items: end;
+  align-items: center;
   display: flex;
   justify-content: space-between;
   gap: 10px;
   margin-bottom: 10px;
+}
+
+.workspace-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  justify-content: flex-end;
+}
+
+.learning-chip {
+  background: #edf4f7;
+  border: 2px solid #9eb7c5;
+  border-radius: 6px;
+  color: #20313d;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.2;
+  padding: 5px 8px;
+}
+
+.learning-chip.over-limit {
+  background: #fff0ed;
+  border-color: #d84a4a;
+  color: #9c2f2f;
+}
+
+.energy-chip {
+  background: #e7f6ea;
+  border-color: #63a878;
+  color: #195f3d;
+}
+
+.energy-chip.energy-low {
+  background: #fff0ed;
+  border-color: #d84a4a;
+  color: #9c2f2f;
+}
+
+.execution-chip {
+  min-width: 128px;
+  text-align: center;
 }
 
 .workspace, .block-palette {
@@ -410,6 +539,20 @@ select, input {
   min-height: 470px;
   overflow: hidden;
   width: 100%;
+}
+
+.blockly-workspace.is-running .blocklySvg {
+  pointer-events: none;
+}
+
+.blocklyDraggable.is-disconnected {
+  filter: saturate(.2);
+  opacity: .42;
+}
+
+.blocklyHighlighted > .blocklyPath {
+  stroke: #ffd43b;
+  stroke-width: 4px;
 }
 
 .blocklyToolboxDiv {
@@ -654,6 +797,13 @@ select, input {
     transform: none;
     width: auto;
   }
+  .palette-area:not(:has(.teacher-tools[open])) {
+    bottom: auto;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 44px;
+  }
   .palette-area:has(.teacher-tools[open]) {
     bottom: 10px;
     top: 10px;
@@ -661,9 +811,9 @@ select, input {
     width: min(310px, calc(100vw - 20px));
   }
   .teacher-tools:not([open]) summary {
-    min-height: 44px;
-    padding: 8px 10px;
-    writing-mode: horizontal-tb;
+    min-height: 148px;
+    padding: 10px 6px;
+    writing-mode: vertical-rl;
   }
   .run-strip {
     display: grid;
@@ -696,8 +846,7 @@ select, input {
     grid-column: 1 / -1;
   }
   .palette-area {
-    bottom: 10px;
-    top: auto;
+    right: 0;
   }
   .status-row { grid-template-columns: 1fr; }
   .game-grid { gap: 0; padding: 3px; }

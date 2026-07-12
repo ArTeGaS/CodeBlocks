@@ -3,7 +3,8 @@
 
   const GRID_WIDTH = 10;
   const GRID_HEIGHT = 8;
-  const STEP_DELAY = 520;
+  const STEP_DELAY = 420;
+  const CONTROL_DELAY = 220;
 
   const STORAGE_KEYS = {
     level: "codeRobot.v2.currentLevel",
@@ -11,17 +12,22 @@
     commands: "codeRobot.v2.commandsByLevel",
     actionLog: "codeRobot.v2.actionLog",
     teacherAccess: "codeRobot.v2.teacherAccess",
+    campaign: "codeRobot.v2.campaignVersion",
   };
 
   const MAX_ACTION_LOG = 500;
+  const CAMPAIGN_VERSION = "23-levels-v1";
 
   const COMMANDS = {
     MOVE: "move",
     TURN: "turn",
+    WAIT: "wait",
     TAKE_KEY: "takeKey",
     OPEN_DOOR: "openDoor",
     REPEAT: "repeat",
+    REPEAT_UNTIL: "repeatUntil",
     IF: "if",
+    IF_ELSE: "ifElse",
   };
 
   const CONDITIONS = {
@@ -33,6 +39,8 @@
     ENEMY_AHEAD: "enemyAhead",
     TRAP_AHEAD: "trapAhead",
     PATH_AHEAD: "pathAhead",
+    PATH_LEFT: "pathLeft",
+    PATH_RIGHT: "pathRight",
   };
 
   const REPEAT_VALUES = Array.from({ length: 14 }, (_, index) => index + 2);
@@ -61,6 +69,7 @@
         },
       ],
     },
+    [COMMANDS.WAIT]: { label: "чекати()", kind: "method", color: "blue", fields: [] },
     [COMMANDS.TAKE_KEY]: { label: "взяти ключ()", kind: "method", color: "gold", fields: [] },
     [COMMANDS.OPEN_DOOR]: { label: "відкрити двері()", kind: "method", color: "brown", fields: [] },
     [COMMANDS.REPEAT]: {
@@ -69,6 +78,13 @@
       color: "green",
       acceptsBody: true,
       fields: [{ name: "times", label: "разів", type: "number", min: 2, max: 15, default: 3, values: REPEAT_VALUES }],
+    },
+    [COMMANDS.REPEAT_UNTIL]: {
+      label: "повторювати до кристала",
+      kind: "loop",
+      color: "green",
+      acceptsBody: true,
+      fields: [],
     },
     [COMMANDS.IF]: {
       label: "якщо",
@@ -80,21 +96,40 @@
           name: "condition",
           label: "умова",
           type: "select",
-          default: CONDITIONS.FRONT_CLEAR,
+          default: CONDITIONS.PATH_AHEAD,
           values: [
-            { value: CONDITIONS.FRONT_CLEAR, label: "попереду вільно" },
-            { value: CONDITIONS.ON_KEY, label: "робот на ключі" },
-            { value: CONDITIONS.DOOR_AHEAD, label: "попереду двері" },
-            { value: CONDITIONS.HAS_KEY, label: "ключ у робота" },
+            { value: CONDITIONS.PATH_AHEAD, label: "попереду шлях" },
+            { value: CONDITIONS.PATH_LEFT, label: "ліворуч шлях" },
+            { value: CONDITIONS.PATH_RIGHT, label: "праворуч шлях" },
             { value: CONDITIONS.ABYSS_AHEAD, label: "попереду безодня" },
             { value: CONDITIONS.ENEMY_AHEAD, label: "попереду ворог" },
             { value: CONDITIONS.TRAP_AHEAD, label: "попереду пастка" },
-            { value: CONDITIONS.PATH_AHEAD, label: "попереду шлях" },
+            { value: CONDITIONS.ON_KEY, label: "робот на ключі" },
+            { value: CONDITIONS.DOOR_AHEAD, label: "попереду двері" },
+            { value: CONDITIONS.HAS_KEY, label: "ключ у робота" },
           ],
         },
       ],
     },
+    [COMMANDS.IF_ELSE]: {
+      label: "якщо / інакше",
+      kind: "condition",
+      color: "purple",
+      acceptsBody: true,
+      acceptsElseBody: true,
+      fields: [
+        {
+          name: "condition",
+          label: "умова",
+          type: "select",
+          default: CONDITIONS.PATH_AHEAD,
+          values: [],
+        },
+      ],
+    },
   };
+
+  COMMAND_DEFINITIONS[COMMANDS.IF_ELSE].fields[0].values = COMMAND_DEFINITIONS[COMMANDS.IF].fields[0].values;
 
   const DIRS = ["up", "right", "down", "left"];
   const DELTAS = {
@@ -118,11 +153,14 @@
     treasure: "assets/svg/treasure.svg",
   };
 
-  function b(type, args = {}, body = []) {
+  function b(type, args = {}, body = [], elseBody = []) {
     const definition = COMMAND_DEFINITIONS[type];
     const finalArgs = {};
     for (const field of definition.fields || []) finalArgs[field.name] = args[field.name] ?? field.default;
-    return definition.acceptsBody ? { type, args: finalArgs, body } : { type, args: finalArgs };
+    if (!definition.acceptsBody) return { type, args: finalArgs };
+    const block = { type, args: finalArgs, body };
+    if (definition.acceptsElseBody) block.elseBody = elseBody;
+    return block;
   }
 
   function walk(steps) {
@@ -157,44 +195,56 @@
     if (!points.some((item) => samePos(item, point))) points.push({ x: point.x, y: point.y });
   }
 
+  function route(...segments) {
+    const points = [];
+    segments.flat().forEach((point) => appendUnique(points, point));
+    return points;
+  }
+
   const LEVELS = [
     {
       name: "Метод руху",
       hint: "Один блок руху робить один крок.",
       robot: { x: 1, y: 3, dir: "right" },
+      availableBlocks: [COMMANDS.MOVE],
       walls: [],
       key: null,
       door: null,
-      crystal: { x: 6, y: 3 },
-      solution: [walk(5)],
+      crystal: { x: 2, y: 3 },
+      solution: [b(COMMANDS.MOVE)],
     },
     {
       name: "Поворот",
       hint: "Метод повертає робота, але не рухає.",
-      robot: { x: 1, y: 6, dir: "up" },
+      robot: { x: 1, y: 5, dir: "up" },
+      availableBlocks: [COMMANDS.MOVE, COMMANDS.TURN],
       walls: [],
       key: null,
       door: null,
-      crystal: { x: 6, y: 3 },
-      solution: [walk(3), b(COMMANDS.TURN, { direction: "right" }), walk(5)],
+      crystal: { x: 3, y: 4 },
+      solution: [
+        b(COMMANDS.MOVE),
+        b(COMMANDS.TURN, { direction: "right" }),
+        b(COMMANDS.MOVE),
+        b(COMMANDS.MOVE),
+      ],
     },
     {
       name: "Обхід",
       hint: "Склади маршрут як послідовність методів.",
       robot: { x: 1, y: 4, dir: "right" },
-      walls: [{ x: 3, y: 4 }, { x: 3, y: 5 }],
+      availableBlocks: [COMMANDS.MOVE, COMMANDS.TURN],
+      walls: [{ x: 3, y: 4 }],
       key: null,
       door: null,
-      crystal: { x: 7, y: 4 },
+      crystal: { x: 5, y: 3 },
       solution: [
         b(COMMANDS.MOVE),
         b(COMMANDS.TURN, { direction: "left" }),
-        walk(2),
+        b(COMMANDS.MOVE),
         b(COMMANDS.TURN, { direction: "right" }),
-        walk(4),
-        b(COMMANDS.TURN, { direction: "right" }),
-        walk(2),
-        b(COMMANDS.TURN, { direction: "left" }),
+        b(COMMANDS.MOVE),
+        b(COMMANDS.MOVE),
         b(COMMANDS.MOVE),
       ],
     },
@@ -202,25 +252,30 @@
       name: "Ключ і двері",
       hint: "Викликай методи в правильному порядку.",
       robot: { x: 1, y: 5, dir: "right" },
+      availableBlocks: [COMMANDS.MOVE, COMMANDS.TURN, COMMANDS.TAKE_KEY, COMMANDS.OPEN_DOOR],
       walls: [
-        { x: 5, y: 0 }, { x: 5, y: 1 }, { x: 5, y: 2 }, { x: 5, y: 3 },
-        { x: 5, y: 4 }, { x: 5, y: 6 }, { x: 5, y: 7 },
+        { x: 4, y: 0 }, { x: 4, y: 1 }, { x: 4, y: 2 }, { x: 4, y: 3 },
+        { x: 4, y: 4 }, { x: 4, y: 6 }, { x: 4, y: 7 },
       ],
-      key: { x: 3, y: 5 },
-      door: { x: 5, y: 5 },
-      crystal: { x: 8, y: 5 },
+      key: { x: 2, y: 5 },
+      door: { x: 4, y: 5 },
+      crystal: { x: 6, y: 5 },
       solution: [
-        walk(2),
+        b(COMMANDS.MOVE),
         b(COMMANDS.TAKE_KEY),
         b(COMMANDS.MOVE),
         b(COMMANDS.OPEN_DOOR),
-        walk(4),
+        b(COMMANDS.MOVE),
+        b(COMMANDS.MOVE),
+        b(COMMANDS.MOVE),
       ],
     },
     {
       name: "Цикл",
-      hint: "Повторення має своє тіло.",
+      hint: "Повторення стискає однакові кроки.",
       robot: { x: 1, y: 1, dir: "right" },
+      availableBlocks: [COMMANDS.MOVE, COMMANDS.TURN, COMMANDS.REPEAT],
+      maxBlocks: 5,
       walls: [{ x: 7, y: 1 }, { x: 7, y: 2 }],
       key: null,
       door: null,
@@ -231,6 +286,8 @@
       name: "Два повторення",
       hint: "Довгі відрізки краще стискати повторенням.",
       robot: { x: 1, y: 1, dir: "right" },
+      availableBlocks: [COMMANDS.MOVE, COMMANDS.TURN, COMMANDS.REPEAT],
+      maxBlocks: 8,
       walls: [{ x: 4, y: 1 }, { x: 4, y: 2 }, { x: 4, y: 3 }, { x: 7, y: 5 }],
       key: null,
       door: null,
@@ -244,19 +301,204 @@
       ],
     },
     {
-      name: "Умова",
-      hint: "Умова робить безпечний крок, далі обійди стіну.",
-      robot: { x: 1, y: 3, dir: "right" },
-      walls: [{ x: 3, y: 3 }],
+      name: "Три перевірки",
+      hint: "Один код має пройти шлях, ворога і пастку.",
+      robot: { x: 2, y: 3, dir: "right" },
+      availableBlocks: [COMMANDS.MOVE, COMMANDS.TURN, COMMANDS.REPEAT, COMMANDS.IF],
+      maxBlocks: 7,
+      walls: [],
+      safePath: line(2, 3, 7, 3),
+      enemies: [],
+      traps: [],
       key: null,
       door: null,
-      crystal: { x: 5, y: 2 },
+      crystal: { x: 7, y: 3 },
+      trials: [
+        {
+          label: "Шлях",
+          robot: { x: 2, y: 3, dir: "right" },
+          crystal: { x: 7, y: 3 },
+          safePath: line(2, 3, 7, 3),
+          enemies: [],
+          traps: [],
+        },
+        {
+          label: "Ворог",
+          robot: { x: 2, y: 3, dir: "right" },
+          crystal: { x: 2, y: 7 },
+          safePath: line(2, 3, 2, 7),
+          enemies: [{ x: 3, y: 3 }],
+          traps: [],
+        },
+        {
+          label: "Пастка",
+          robot: { x: 2, y: 3, dir: "right" },
+          crystal: { x: 2, y: 0 },
+          safePath: line(2, 3, 2, 0),
+          enemies: [],
+          traps: [{ x: 3, y: 3 }],
+        },
+      ],
       solution: [
-        b(COMMANDS.IF, { condition: CONDITIONS.FRONT_CLEAR }, [b(COMMANDS.MOVE)]),
+        b(COMMANDS.REPEAT, { times: 6 }, [
+          b(COMMANDS.IF, { condition: CONDITIONS.ENEMY_AHEAD }, [b(COMMANDS.TURN, { direction: "right" })]),
+          b(COMMANDS.IF, { condition: CONDITIONS.TRAP_AHEAD }, [b(COMMANDS.TURN, { direction: "left" })]),
+          b(COMMANDS.IF, { condition: CONDITIONS.PATH_AHEAD }, [b(COMMANDS.MOVE)]),
+        ]),
+      ],
+    },
+    {
+      name: "Два виходи",
+      hint: "Одна умова обирає дію, а «інакше» — другий варіант.",
+      robot: { x: 2, y: 4, dir: "right" },
+      availableBlocks: [COMMANDS.MOVE, COMMANDS.TURN, COMMANDS.REPEAT, COMMANDS.IF_ELSE],
+      maxBlocks: 5,
+      walls: [],
+      safePath: line(2, 4, 2, 7),
+      enemies: [{ x: 3, y: 4 }],
+      key: null,
+      door: null,
+      crystal: { x: 2, y: 7 },
+      trials: [
+        {
+          label: "Ворог праворуч",
+          robot: { x: 2, y: 4, dir: "right" },
+          safePath: line(2, 4, 2, 7),
+          enemies: [{ x: 3, y: 4 }],
+          crystal: { x: 2, y: 7 },
+        },
+        {
+          label: "Шлях ліворуч",
+          robot: { x: 2, y: 4, dir: "right" },
+          safePath: line(2, 4, 2, 1),
+          enemies: [],
+          crystal: { x: 2, y: 1 },
+        },
+      ],
+      solution: [
+        b(
+          COMMANDS.IF_ELSE,
+          { condition: CONDITIONS.ENEMY_AHEAD },
+          [b(COMMANDS.TURN, { direction: "right" })],
+          [b(COMMANDS.TURN, { direction: "left" })],
+        ),
+        walk(3),
+      ],
+    },
+    {
+      name: "Посунь ящик",
+      hint: "Крок у бік ящика штовхає його на одну вільну клітинку.",
+      robot: { x: 1, y: 4, dir: "right" },
+      availableBlocks: [COMMANDS.MOVE, COMMANDS.REPEAT],
+      maxBlocks: 2,
+      walls: [],
+      safePath: line(1, 4, 6, 4),
+      crates: [{ x: 3, y: 4 }],
+      key: null,
+      door: null,
+      crystal: { x: 5, y: 4 },
+      solution: [walk(4)],
+    },
+    {
+      name: "Ящик на кнопку",
+      hint: "Залиш ящик на круглій кнопці, щоб відкрити ворота.",
+      robot: { x: 1, y: 5, dir: "right" },
+      availableBlocks: [COMMANDS.MOVE, COMMANDS.TURN, COMMANDS.REPEAT],
+      walls: [],
+      safePath: route(line(1, 5, 5, 5), line(4, 5, 4, 3), line(4, 3, 8, 3), line(8, 3, 8, 2)),
+      crates: [{ x: 3, y: 5 }],
+      buttons: [{ id: "crate-gate", x: 5, y: 5, requires: "crate" }],
+      gates: [{ x: 5, y: 3, buttonId: "crate-gate" }],
+      key: null,
+      door: null,
+      crystal: { x: 8, y: 2 },
+      solution: [
+        walk(3),
+        b(COMMANDS.TURN, { direction: "left" }),
+        walk(2),
+        b(COMMANDS.TURN, { direction: "right" }),
+        walk(4),
         b(COMMANDS.TURN, { direction: "left" }),
         b(COMMANDS.MOVE),
+      ],
+    },
+    {
+      name: "Кнопка вмикає міст",
+      hint: "Спочатку наступи на кнопку, тоді переходь воду по ввімкненому мосту.",
+      robot: { x: 1, y: 6, dir: "right" },
+      availableBlocks: [COMMANDS.MOVE, COMMANDS.TURN, COMMANDS.REPEAT],
+      maxBlocks: 8,
+      walls: [],
+      safePath: route(line(1, 6, 5, 6), line(5, 6, 5, 2), line(5, 2, 8, 2)),
+      water: line(1, 4, 8, 4),
+      toggleBridges: [{ x: 5, y: 4, buttonId: "bridge-button" }],
+      buttons: [{ id: "bridge-button", x: 3, y: 6, requires: "robotOrCrate" }],
+      key: null,
+      door: null,
+      crystal: { x: 8, y: 2 },
+      solution: [
+        walk(4),
+        b(COMMANDS.TURN, { direction: "left" }),
+        walk(4),
         b(COMMANDS.TURN, { direction: "right" }),
-        b(COMMANDS.REPEAT, { times: 3 }, [b(COMMANDS.MOVE)]),
+        walk(3),
+      ],
+    },
+    {
+      name: "Дочекайся патруля",
+      hint: "Пунктир показує маршрут ворога: зачекай у безпечній клітинці.",
+      robot: { x: 1, y: 4, dir: "right" },
+      availableBlocks: [COMMANDS.MOVE, COMMANDS.WAIT, COMMANDS.REPEAT],
+      maxBlocks: 3,
+      walls: [],
+      safePath: line(1, 4, 8, 4),
+      movingEnemies: [{ path: line(5, 1, 5, 6), startIndex: 0 }],
+      key: null,
+      door: null,
+      crystal: { x: 8, y: 4 },
+      solution: [b(COMMANDS.WAIT), walk(7)],
+    },
+    {
+      name: "Запас енергії",
+      hint: "Енергії рівно на найкоротший маршрут — зайвий крок її витратить.",
+      robot: { x: 1, y: 6, dir: "up" },
+      availableBlocks: [COMMANDS.MOVE, COMMANDS.TURN, COMMANDS.REPEAT],
+      maxBlocks: 5,
+      openFloor: true,
+      energy: 10,
+      walls: [],
+      key: null,
+      door: null,
+      crystal: { x: 7, y: 2 },
+      solution: [
+        walk(4),
+        b(COMMANDS.TURN, { direction: "right" }),
+        walk(6),
+      ],
+    },
+    {
+      name: "До самого кристала",
+      hint: "На кожному кроці спочатку перевіряй, чи є шлях праворуч.",
+      robot: { x: 1, y: 1, dir: "right" },
+      availableBlocks: [COMMANDS.MOVE, COMMANDS.TURN, COMMANDS.IF, COMMANDS.REPEAT_UNTIL],
+      maxBlocks: 5,
+      walls: [],
+      safePath: route(
+        line(1, 1, 8, 1),
+        line(8, 1, 8, 6),
+        line(8, 6, 3, 6),
+        line(3, 6, 3, 3),
+        line(3, 3, 6, 3),
+        line(6, 3, 6, 4),
+      ),
+      key: null,
+      door: null,
+      crystal: { x: 6, y: 4 },
+      solution: [
+        b(COMMANDS.REPEAT_UNTIL, {}, [
+          b(COMMANDS.IF, { condition: CONDITIONS.PATH_RIGHT }, [b(COMMANDS.TURN, { direction: "right" })]),
+          b(COMMANDS.IF, { condition: CONDITIONS.PATH_AHEAD }, [b(COMMANDS.MOVE)]),
+        ]),
       ],
     },
     {
@@ -348,6 +590,56 @@
       ],
     },
     {
+      name: "Вантажний міст",
+      hint: "Достав ящик на кнопку: вона ввімкне міст на іншому боці маршруту.",
+      width: 20,
+      height: 20,
+      robot: { x: 1, y: 16, dir: "right" },
+      availableBlocks: [COMMANDS.MOVE, COMMANDS.TURN, COMMANDS.REPEAT],
+      maxBlocks: 11,
+      walls: borderWalls(20, 20),
+      safePath: route(
+        line(1, 16, 7, 16),
+        line(6, 16, 6, 8),
+        line(6, 8, 17, 8),
+        line(17, 8, 17, 4),
+      ),
+      crates: [{ x: 4, y: 16 }],
+      buttons: [{ id: "cargo-bridge", x: 7, y: 16, requires: "crate" }],
+      water: line(10, 1, 10, 18),
+      toggleBridges: [{ x: 10, y: 8, buttonId: "cargo-bridge" }],
+      key: null,
+      door: null,
+      crystal: { x: 17, y: 4 },
+      solution: [
+        walk(5),
+        b(COMMANDS.TURN, { direction: "left" }),
+        walk(8),
+        b(COMMANDS.TURN, { direction: "right" }),
+        walk(11),
+        b(COMMANDS.TURN, { direction: "left" }),
+        walk(4),
+      ],
+    },
+    {
+      name: "Патрульний канал",
+      hint: "Починай перехід, коли патруль відходить від клітинки мосту.",
+      width: 20,
+      height: 20,
+      robot: { x: 1, y: 10, dir: "right" },
+      availableBlocks: [COMMANDS.MOVE, COMMANDS.WAIT, COMMANDS.REPEAT],
+      maxBlocks: 5,
+      walls: borderWalls(20, 20),
+      safePath: line(1, 10, 18, 10),
+      water: line(9, 1, 9, 18),
+      bridges: [{ x: 9, y: 10 }],
+      movingEnemies: [{ path: line(9, 6, 9, 14), startIndex: 5 }],
+      key: null,
+      door: null,
+      crystal: { x: 18, y: 10 },
+      solution: [b(COMMANDS.WAIT), walk(15), walk(2)],
+    },
+    {
       name: "Річка і вороги",
       hint: "Повний рівень: переходь воду тільки мостом і не заходь на ворогів.",
       width: 30,
@@ -388,7 +680,7 @@
     },
     {
       name: "Лава і пастки",
-      hint: "Повний рівень: лава пропускає тільки по мосту, пастки треба обходити.",
+      hint: "Активуй кнопку перед довгим шляхом: вона ввімкне міст над лавою.",
       width: 30,
       height: 30,
       robot: { x: 3, y: 27, dir: "right" },
@@ -402,7 +694,9 @@
         ...line(20, 19, 26, 19),
       ],
       lava: line(1, 14, 28, 14),
-      bridges: [{ x: 6, y: 14 }, { x: 22, y: 14 }],
+      bridges: [{ x: 22, y: 14 }],
+      buttons: [{ id: "lava-bridge", x: 6, y: 27, requires: "robotOrCrate" }],
+      toggleBridges: [{ x: 6, y: 14, buttonId: "lava-bridge" }],
       traps: [
         { x: 8, y: 27 }, { x: 10, y: 24 }, { x: 13, y: 18 }, { x: 20, y: 14 },
         { x: 16, y: 6 }, { x: 24, y: 6 }, { x: 25, y: 6 },
@@ -473,7 +767,7 @@
     },
     {
       name: "Кристали по порядку",
-      hint: "Повний рівень: збери кристали 1, 2, 3, 4 саме в такому порядку.",
+      hint: "Повний рівень: збери кристали 1, 2, 3, 4, 5, 6 саме в такому порядку.",
       width: 30,
       height: 30,
       robot: { x: 2, y: 2, dir: "right" },
@@ -530,6 +824,26 @@
     return JSON.parse(JSON.stringify(value));
   }
 
+  function levelTrialCount(level) {
+    return Array.isArray(level.trials) && level.trials.length ? level.trials.length : 1;
+  }
+
+  function levelForTrial(level, index = 0) {
+    const snapshot = clone(level);
+    const trial = snapshot.trials?.[index];
+    if (trial) Object.assign(snapshot, clone(trial));
+    return snapshot;
+  }
+
+  function countAuthoredBlocks(commands) {
+    return commands.reduce((total, command) => (
+      total
+      + 1
+      + (command.body ? countAuthoredBlocks(command.body) : 0)
+      + (command.elseBody ? countAuthoredBlocks(command.elseBody) : 0)
+    ), 0);
+  }
+
   function samePos(a, b) {
     return Boolean(a && b && a.x === b.x && a.y === b.y);
   }
@@ -544,7 +858,7 @@
           for (let index = 0; index < command.args.times; index += 1) walk(command.body);
           continue;
         }
-        if (command.type === COMMANDS.IF) {
+        if (command.type === COMMANDS.REPEAT_UNTIL || command.type === COMMANDS.IF || command.type === COMMANDS.IF_ELSE) {
           walk(command.body);
           continue;
         }
@@ -569,7 +883,7 @@
   }
 
   LEVELS.forEach((level, index) => {
-    if (index >= 2 && !level.safePath) level.safePath = traceSolutionPath(level.robot, level.solution);
+    if (index >= 2 && !level.safePath && !level.openFloor) level.safePath = traceSolutionPath(level.robot, level.solution);
   });
 
   function levelWidth(level) {
@@ -596,34 +910,80 @@
     return Array.isArray(level.safePath) && level.safePath.some((tile) => samePos(tile, pos));
   }
 
-  function isBridge(level, pos) {
-    return hasTile(level, "bridges", pos);
+  function isButtonPressed(state, buttonId) {
+    return Boolean(state?.pressedButtons?.has(buttonId));
   }
 
-  function isAbyss(level, pos) {
+  function buttonAt(level, pos) {
+    return (level.buttons || []).find((button) => samePos(button, pos));
+  }
+
+  function gateAt(level, pos) {
+    return (level.gates || []).find((gate) => samePos(gate, pos));
+  }
+
+  function toggleBridgeAt(level, pos) {
+    return (level.toggleBridges || []).find((bridge) => samePos(bridge, pos));
+  }
+
+  function crateIndexAt(state, pos) {
+    return (state?.crates || []).findIndex((crate) => samePos(crate, pos));
+  }
+
+  function movingEnemyAt(state, pos) {
+    return (state?.movingEnemies || []).some((enemy) => samePos(enemy.path[enemy.index], pos));
+  }
+
+  function isBridge(level, pos, state = null) {
+    if (hasTile(level, "bridges", pos)) return true;
+    const toggleBridge = toggleBridgeAt(level, pos);
+    return Boolean(toggleBridge && isButtonPressed(state, toggleBridge.buttonId));
+  }
+
+  function isAbyss(level, pos, state = null) {
     if (hasTile(level, "abyss", pos)) return true;
     if (!Array.isArray(level.safePath)) return false;
     if (isSafePath(level, pos)) return false;
-    if (isWall(level, pos) || isBridge(level, pos)) return false;
+    if (isWall(level, pos) || isBridge(level, pos, state)) return false;
     if (hasTile(level, "water", pos) || hasTile(level, "lava", pos)) return false;
     if (hasTile(level, "enemies", pos) || hasTile(level, "traps", pos)) return false;
     if (samePos(level.key, pos) || samePos(level.door, pos) || samePos(level.crystal, pos)) return false;
+    if ((level.crates || []).some((crate) => samePos(crate, pos))) return false;
+    if ((level.buttons || []).some((button) => samePos(button, pos))) return false;
+    if ((level.gates || []).some((gate) => samePos(gate, pos))) return false;
+    if ((level.toggleBridges || []).some((bridge) => samePos(bridge, pos))) return false;
+    if ((level.movingEnemies || []).some((enemy) => enemy.path.some((tile) => samePos(tile, pos)))) return false;
     if ((level.numberedCrystals || []).some((crystal) => samePos(crystal, pos))) return false;
     return true;
   }
 
-  function terrainIssue(level, pos) {
-    if (isAbyss(level, pos)) return "Тут безодня. Один крок убік — місія провалена.";
+  function terrainIssue(level, pos, state = null) {
+    if (isAbyss(level, pos, state)) return "Тут безодня. Повернися до світлої стежки.";
     if (hasTile(level, "enemies", pos)) return "На цій клітинці ворог. Обійди його.";
+    if (movingEnemyAt(state, pos)) return "Патруль перекрив шлях. Спробуй «чекати()» і рушай, коли клітинка вільна.";
     if (hasTile(level, "traps", pos)) return "Це пастка. Обери інший шлях.";
-    if (hasTile(level, "water", pos) && !isBridge(level, pos)) return "Тут вода. Шукай міст.";
-    if (hasTile(level, "lava", pos) && !isBridge(level, pos)) return "Тут лава. Шукай міст.";
+    if (hasTile(level, "water", pos) && !isBridge(level, pos, state)) {
+      return toggleBridgeAt(level, pos)
+        ? "Міст вимкнений. Знайди кнопку й активуй її."
+        : "Тут вода. Шукай міст.";
+    }
+    if (hasTile(level, "lava", pos) && !isBridge(level, pos, state)) {
+      return toggleBridgeAt(level, pos)
+        ? "Міст над лавою вимкнений. Спочатку активуй кнопку."
+        : "Тут лава. Шукай міст.";
+    }
     return "";
   }
 
   function facingPosition(robot) {
     const delta = DELTAS[robot.dir];
     return { x: robot.x + delta.x, y: robot.y + delta.y };
+  }
+
+  function conditionTargetPosition(robot, condition) {
+    if (condition === CONDITIONS.PATH_LEFT) return facingPosition({ ...robot, dir: turn(robot.dir, "left") });
+    if (condition === CONDITIONS.PATH_RIGHT) return facingPosition({ ...robot, dir: turn(robot.dir, "right") });
+    return facingPosition(robot);
   }
 
   function turn(dir, direction) {
@@ -634,17 +994,84 @@
 
   function createRunState(level) {
     const snapshot = clone(level);
-    return {
+    const runState = {
       level: snapshot,
       robot: { ...snapshot.robot },
       hasKey: false,
       keyTaken: false,
       doorOpen: false,
+      crates: clone(snapshot.crates || []),
+      pressedButtons: new Set(),
+      movingEnemies: (snapshot.movingEnemies || []).map((enemy) => ({
+        path: clone(enemy.path),
+        index: Math.max(0, Math.min(enemy.path.length - 1, enemy.startIndex || 0)),
+        direction: enemy.direction === -1 ? -1 : 1,
+      })),
+      energyRemaining: Number.isInteger(snapshot.energy) ? snapshot.energy : null,
       collectedCrystals: [],
       nextCrystalNumber: 1,
+      trail: [{ x: snapshot.robot.x, y: snapshot.robot.y }],
       status: "playing",
       message: "Готово.",
     };
+    updatePressedButtons(runState);
+    return runState;
+  }
+
+  function updatePressedButtons(state) {
+    for (const button of state.level.buttons || []) {
+      const hasCrate = crateIndexAt(state, button) >= 0;
+      const hasRobot = samePos(state.robot, button);
+      const occupied = button.requires === "crate" ? hasCrate : hasCrate || hasRobot;
+      if (occupied) state.pressedButtons.add(button.id);
+      else if (button.latching === false) state.pressedButtons.delete(button.id);
+    }
+  }
+
+  function advanceMovingEnemies(state) {
+    for (const enemy of state.movingEnemies) {
+      if (enemy.path.length < 2) continue;
+      let nextIndex = enemy.index + enemy.direction;
+      if (nextIndex < 0 || nextIndex >= enemy.path.length) {
+        enemy.direction *= -1;
+        nextIndex = enemy.index + enemy.direction;
+      }
+      enemy.index = nextIndex;
+      if (samePos(enemy.path[enemy.index], state.robot)) {
+        return { ok: false, message: "Патруль наздогнав робота. Додай «чекати()» у безпечному місці.", target: { ...state.robot } };
+      }
+    }
+    return { ok: true };
+  }
+
+  function closedGateAt(state, pos) {
+    const gate = gateAt(state.level, pos);
+    return gate && !isButtonPressed(state, gate.buttonId) ? gate : null;
+  }
+
+  function movementIssue(state, pos, direction, options = {}) {
+    if (isOut(state.level, pos) || isWall(state.level, pos)) {
+      return options.forCrate ? "за ним стіна або край поля." : "Ой, робот уперся. Зміни алгоритм.";
+    }
+    const gate = closedGateAt(state, pos);
+    if (gate) {
+      return options.forCrate
+        ? "попереду закриті ворота."
+        : "Ворота закриті. Спочатку активуй кнопку, що їх відкриває.";
+    }
+    if (state.level.door && samePos(pos, state.level.door) && !state.doorOpen) {
+      return state.hasKey ? "Спочатку відкрий двері." : "Потрібен ключ.";
+    }
+    const issue = terrainIssue(state.level, pos, state);
+    if (issue) return options.forCrate ? "попереду небезпечна клітинка." : issue;
+    if (crateIndexAt(state, pos) >= 0) {
+      if (options.forCrate) return "На цій клітинці вже стоїть ящик.";
+      const delta = DELTAS[direction];
+      const beyond = { x: pos.x + delta.x, y: pos.y + delta.y };
+      const crateIssue = movementIssue(state, beyond, direction, { forCrate: true });
+      if (crateIssue) return `Ящик не рухається: ${crateIssue.toLowerCase()}`;
+    }
+    return "";
   }
 
   function fieldValue(field, value) {
@@ -666,15 +1093,25 @@
     if (!definition) throw new Error("Невідомий блок.");
     const args = {};
     for (const field of definition.fields || []) {
-      args[field.name] = fieldValue(field, node.args?.[field.name] ?? field.default);
+      const rawValue = field.name === "condition" && node.args?.[field.name] === CONDITIONS.FRONT_CLEAR
+        ? CONDITIONS.PATH_AHEAD
+        : node.args?.[field.name] ?? field.default;
+      args[field.name] = fieldValue(field, rawValue);
     }
     const compiled = { type: node.type, args };
+    if (node.blockId) compiled.blockId = node.blockId;
     if (definition.acceptsBody) {
       if (!Array.isArray(node.body) || node.body.length === 0) {
-        const label = node.type === COMMANDS.REPEAT ? "повторення" : "умови";
+        const label = [COMMANDS.REPEAT, COMMANDS.REPEAT_UNTIL].includes(node.type) ? "повторення" : "умови";
         throw new Error(`Всередині ${label} потрібна команда.`);
       }
       compiled.body = compileProgram(node.body);
+      if (definition.acceptsElseBody) {
+        if (!Array.isArray(node.elseBody) || node.elseBody.length === 0) {
+          throw new Error("Всередині «інакше» потрібна команда.");
+        }
+        compiled.elseBody = compileProgram(node.elseBody);
+      }
     }
     return compiled;
   }
@@ -688,9 +1125,21 @@
     for (const node of nodes) {
       if (node.type === COMMANDS.REPEAT) {
         for (let i = 0; i < node.args.times; i += 1) flat.push(...flattenCompiled(node.body, stateForConditions));
+      } else if (node.type === COMMANDS.REPEAT_UNTIL) {
+        flat.push(...flattenCompiled(node.body, stateForConditions));
       } else if (node.type === COMMANDS.IF) {
         if (!stateForConditions || evaluateCondition(stateForConditions, node.args.condition)) {
           flat.push(...flattenCompiled(node.body, stateForConditions));
+        }
+      } else if (node.type === COMMANDS.IF_ELSE) {
+        if (!stateForConditions) {
+          flat.push(...flattenCompiled(node.body, stateForConditions));
+          flat.push(...flattenCompiled(node.elseBody, stateForConditions));
+        } else {
+          flat.push(...flattenCompiled(
+            evaluateCondition(stateForConditions, node.args.condition) ? node.body : node.elseBody,
+            stateForConditions,
+          ));
         }
       } else {
         flat.push(node);
@@ -704,25 +1153,24 @@
   }
 
   function evaluateCondition(state, condition) {
-    const front = facingPosition(state.robot);
-    if (condition === CONDITIONS.FRONT_CLEAR) {
-      return !isOut(state.level, front)
-        && !isWall(state.level, front)
-        && !terrainIssue(state.level, front)
-        && !(state.level.door && samePos(front, state.level.door) && !state.doorOpen);
+    const target = conditionTargetPosition(state.robot, condition);
+    if ([CONDITIONS.FRONT_CLEAR, CONDITIONS.PATH_AHEAD, CONDITIONS.PATH_LEFT, CONDITIONS.PATH_RIGHT].includes(condition)) {
+      const direction = condition === CONDITIONS.PATH_LEFT
+        ? turn(state.robot.dir, "left")
+        : condition === CONDITIONS.PATH_RIGHT
+          ? turn(state.robot.dir, "right")
+          : state.robot.dir;
+      return !movementIssue(state, target, direction);
     }
+    const front = target;
     if (condition === CONDITIONS.ON_KEY) return Boolean(state.level.key && !state.keyTaken && samePos(state.robot, state.level.key));
     if (condition === CONDITIONS.DOOR_AHEAD) return Boolean(state.level.door && samePos(front, state.level.door));
     if (condition === CONDITIONS.HAS_KEY) return state.hasKey;
-    if (condition === CONDITIONS.ABYSS_AHEAD) return !isOut(state.level, front) && isAbyss(state.level, front);
-    if (condition === CONDITIONS.ENEMY_AHEAD) return !isOut(state.level, front) && hasTile(state.level, "enemies", front);
-    if (condition === CONDITIONS.TRAP_AHEAD) return !isOut(state.level, front) && hasTile(state.level, "traps", front);
-    if (condition === CONDITIONS.PATH_AHEAD) {
-      return !isOut(state.level, front)
-        && !isWall(state.level, front)
-        && !terrainIssue(state.level, front)
-        && !(state.level.door && samePos(front, state.level.door) && !state.doorOpen);
+    if (condition === CONDITIONS.ABYSS_AHEAD) return !isOut(state.level, front) && isAbyss(state.level, front, state);
+    if (condition === CONDITIONS.ENEMY_AHEAD) {
+      return !isOut(state.level, front) && (hasTile(state.level, "enemies", front) || movingEnemyAt(state, front));
     }
+    if (condition === CONDITIONS.TRAP_AHEAD) return !isOut(state.level, front) && hasTile(state.level, "traps", front);
     return false;
   }
 
@@ -757,10 +1205,50 @@
     return true;
   }
 
+  function incompleteMessage(state) {
+    if (state.level.numberedCrystals?.length) {
+      return `Алгоритм закінчився. Далі шукай кристал ${state.nextCrystalNumber}.`;
+    }
+    if (state.level.key && !state.keyTaken) {
+      return "Алгоритм закінчився. Ключ ще на полі — доведи робота до нього.";
+    }
+    if (state.level.door && !state.doorOpen) {
+      return "Алгоритм закінчився. Двері ще зачинені — підійди й відкрий їх після ключа.";
+    }
+    const pendingButton = (state.level.buttons || []).find((button) => !isButtonPressed(state, button.id));
+    if (pendingButton?.requires === "crate") {
+      return "Алгоритм закінчився. Ящик ще не активував кнопку — підійди до нього з потрібного боку.";
+    }
+    if (pendingButton) {
+      return "Алгоритм закінчився. Кнопка ще не активована — доведи робота до круглого маркера.";
+    }
+    if ((state.level.toggleBridges || []).some((bridge) => !isButtonPressed(state, bridge.buttonId))) {
+      return "Алгоритм закінчився. Міст ще вимкнений — спочатку активуй його кнопку.";
+    }
+    if (state.level.movingEnemies?.length) {
+      return "Алгоритм закінчився до кристала. Після безпечного очікування додай рух далі.";
+    }
+    if (state.energyRemaining !== null) {
+      return `Алгоритм закінчився. До кристала ще є шлях, енергії залишилось: ${state.energyRemaining}.`;
+    }
+    return "Алгоритм закінчився раніше за маршрут. Подивись, де зупинився робот, і додай наступний блок.";
+  }
+
+  function finishPrimitiveAction(state, message) {
+    updatePressedButtons(state);
+    const patrol = advanceMovingEnemies(state);
+    if (!patrol.ok) return patrol;
+    if (checkWin(state)) return { ok: true, message: "Місію виконано!" };
+    return { ok: true, message };
+  }
+
   function executePrimitive(state, command) {
+    if (command.type === COMMANDS.WAIT) {
+      return finishPrimitiveAction(state, "Робот зачекав, патруль зробив крок.");
+    }
     if (command.type === COMMANDS.TURN) {
       state.robot.dir = turn(state.robot.dir, command.args.direction);
-      return { ok: true, message: "Поворот." };
+      return finishPrimitiveAction(state, "Поворот.");
     }
     if (command.type === COMMANDS.TAKE_KEY) {
       if (!state.level.key || state.keyTaken || !samePos(state.robot, state.level.key)) {
@@ -768,53 +1256,86 @@
       }
       state.hasKey = true;
       state.keyTaken = true;
-      return { ok: true, message: "Ключ у робота." };
+      return finishPrimitiveAction(state, "Ключ у робота.");
     }
     if (command.type === COMMANDS.OPEN_DOOR) {
-      if (!state.level.door) return { ok: true, message: "Дверей немає." };
-      if (!state.hasKey) return { ok: false, message: "Потрібен ключ." };
+      if (!state.level.door) return finishPrimitiveAction(state, "Дверей немає.");
+      if (!state.hasKey) return { ok: false, message: "Потрібен ключ. Спочатку знайди його й виклич «взяти ключ()»." };
       if (!samePos(state.robot, state.level.door) && !samePos(facingPosition(state.robot), state.level.door)) {
-        return { ok: false, message: "Підійди до дверей." };
+        return { ok: false, message: "Підійди до дверей, а тоді відкрий їх." };
       }
       state.doorOpen = true;
-      return { ok: true, message: "Двері відкрито." };
+      return finishPrimitiveAction(state, "Двері відкрито.");
     }
     if (command.type === COMMANDS.MOVE) {
       const steps = command.args.steps || 1;
       for (let step = 0; step < steps; step += 1) {
-        const next = facingPosition(state.robot);
-        if (isOut(state.level, next) || isWall(state.level, next)) return { ok: false, message: "Ой, робот уперся. Зміни алгоритм." };
-        const issue = terrainIssue(state.level, next);
-        if (issue) return { ok: false, message: issue };
-        if (state.level.door && samePos(next, state.level.door) && !state.doorOpen) {
-          return { ok: false, message: state.hasKey ? "Спочатку відкрий двері." : "Потрібен ключ." };
+        if (state.energyRemaining !== null && state.energyRemaining <= 0) {
+          return {
+            ok: false,
+            message: "Енергія скінчилася. Шукай коротший маршрут і прибери зайві кроки.",
+            target: { ...state.robot },
+          };
         }
+        const next = facingPosition(state.robot);
+        const issue = movementIssue(state, next, state.robot.dir);
+        if (issue) return { ok: false, message: issue, target: next };
+
+        const crateIndex = crateIndexAt(state, next);
+        if (crateIndex >= 0) {
+          const delta = DELTAS[state.robot.dir];
+          state.crates[crateIndex] = { x: next.x + delta.x, y: next.y + delta.y };
+        }
+
         state.robot.x = next.x;
         state.robot.y = next.y;
+        if (state.energyRemaining !== null) state.energyRemaining -= 1;
+        state.trail.push({ x: next.x, y: next.y });
+        updatePressedButtons(state);
+
         const collected = collectNumberedCrystal(state);
         if (!collected.ok) return collected;
+        const patrol = advanceMovingEnemies(state);
+        if (!patrol.ok) return patrol;
         if (checkWin(state)) return { ok: true, message: "Місію виконано!" };
       }
       return { ok: true, message: "Рух." };
     }
-    return { ok: false, message: "Робот не знає блок." };
+    return { ok: false, message: "Робот не знає цей блок. Прибери його й спробуй ще раз." };
   }
 
-  function runNodes(state, nodes, trace = []) {
+  function runNodes(state, nodes, trace = [], context = { untilIterations: 0 }) {
     for (const node of nodes) {
       trace.push(node);
       if (node.type === COMMANDS.REPEAT) {
         for (let i = 0; i < node.args.times; i += 1) {
-          const result = runNodes(state, node.body, trace);
+          const result = runNodes(state, node.body, trace, context);
+          if (!result.ok || state.status === "success") return result;
+        }
+        continue;
+      }
+      if (node.type === COMMANDS.REPEAT_UNTIL) {
+        while (!checkWin(state)) {
+          context.untilIterations += 1;
+          if (context.untilIterations > 200) {
+            return { ok: false, message: "Повторення не дісталося до кристала. Перевір умови." };
+          }
+          const result = runNodes(state, node.body, trace, context);
           if (!result.ok || state.status === "success") return result;
         }
         continue;
       }
       if (node.type === COMMANDS.IF) {
         if (evaluateCondition(state, node.args.condition)) {
-          const result = runNodes(state, node.body, trace);
+          const result = runNodes(state, node.body, trace, context);
           if (!result.ok || state.status === "success") return result;
         }
+        continue;
+      }
+      if (node.type === COMMANDS.IF_ELSE) {
+        const branch = evaluateCondition(state, node.args.condition) ? node.body : node.elseBody;
+        const result = runNodes(state, branch, trace, context);
+        if (!result.ok || state.status === "success") return result;
         continue;
       }
       const result = executePrimitive(state, node);
@@ -835,7 +1356,17 @@
     const result = runNodes(state, compiled);
     if (!result.ok) return { status: "error", message: result.message, state };
     if (checkWin(state)) return { status: "success", message: "Місію виконано!", state };
-    return { status: "incomplete", message: "Команди закінчилися.", state };
+    return { status: "incomplete", message: incompleteMessage(state), state };
+  }
+
+  function simulateLevelProgram(level, commands) {
+    let finalResult = null;
+    for (let index = 0; index < levelTrialCount(level); index += 1) {
+      const result = simulateProgram(levelForTrial(level, index), commands);
+      if (result.status !== "success") return { ...result, trialIndex: index };
+      finalResult = result;
+    }
+    return { ...finalResult, trialIndex: levelTrialCount(level) - 1 };
   }
 
   const api = {
@@ -847,10 +1378,14 @@
     LEVELS,
     levelWidth,
     levelHeight,
+    levelTrialCount,
+    levelForTrial,
+    countAuthoredBlocks,
     compileProgram,
     expandRepeatCommands,
     createRunState,
     simulateProgram,
+    simulateLevelProgram,
     checkWin,
     assetMap,
   };
@@ -864,9 +1399,17 @@
     runState: createRunState(LEVELS[0]),
     commands: [],
     compiled: [],
-    flat: [],
+    runtimeStack: [],
     pointer: 0,
-    activeFlatIndex: -1,
+    attemptActive: false,
+    activeBlockId: null,
+    activeBlockType: null,
+    executionStatus: "Готово",
+    sensorPos: null,
+    sensorResult: null,
+    failurePos: null,
+    trialIndex: 0,
+    nextDelay: STEP_DELAY,
     timer: null,
     isRunning: false,
     completed: new Set(),
@@ -884,6 +1427,9 @@
     palette: document.getElementById("blockPalette"),
     insertionLabel: document.getElementById("insertionLabel"),
     blocklyDiv: document.getElementById("blocklyDiv"),
+    blockBudget: document.getElementById("blockBudget"),
+    energyStatus: document.getElementById("energyStatus"),
+    executionStatus: document.getElementById("executionStatus"),
     solutionBox: document.getElementById("solutionBox"),
     teacherPanel: document.getElementById("teacherPanel"),
     paletteArea: document.querySelector(".palette-area"),
@@ -918,11 +1464,23 @@
     els.message.className = `message ${type}`;
   }
 
+  function isTeacherHost() {
+    return ["localhost", "127.0.0.1", "::1"].includes(root.location?.hostname);
+  }
+
   function readTeacherHashMode() {
     const hash = root.location?.hash?.toLowerCase() || "";
     if (hash === "#teacher" || hash === "#admin" || hash.includes("teacher=1") || hash.includes("admin=1")) return "teacher";
     if (hash === "#student" || hash.includes("student=1")) return "student";
     return null;
+  }
+
+  function isRememberedTeacherBrowser() {
+    try {
+      return localStorage.getItem(STORAGE_KEYS.teacherAccess) === "1";
+    } catch {
+      return false;
+    }
   }
 
   async function resolveTeacherAccess() {
@@ -941,7 +1499,7 @@
       }
       return false;
     }
-    return true;
+    return isTeacherHost() || isRememberedTeacherBrowser();
   }
 
   function applyAccessMode(teacher) {
@@ -1002,7 +1560,34 @@
     recordAction(type, { commandCount: state.commands.length });
   }
 
+  function migrateCampaignProgress() {
+    if (localStorage.getItem(STORAGE_KEYS.campaign) === CAMPAIGN_VERSION) return;
+    const done = readStoredJson(STORAGE_KEYS.done, []);
+    const savedCommands = readStoredJson(STORAGE_KEYS.commands, {});
+    const storedLevel = Number(localStorage.getItem(STORAGE_KEYS.level));
+    const looksLikeNewCampaign = done.some((index) => index > 13)
+      || Object.keys(savedCommands).some((index) => Number(index) > 13);
+
+    if (!looksLikeNewCampaign) {
+      const oldToNew = new Map([
+        [7, 14], [8, 15], [9, 16],
+        [10, 19], [11, 20], [12, 21], [13, 22],
+      ]);
+      const migratedDone = done.map((index) => oldToNew.get(index) ?? index);
+      const migratedCommands = {};
+      Object.entries(savedCommands).forEach(([index, commands]) => {
+        migratedCommands[String(oldToNew.get(Number(index)) ?? Number(index))] = commands;
+      });
+      if (done.length) localStorage.setItem(STORAGE_KEYS.done, JSON.stringify([...new Set(migratedDone)]));
+      if (Object.keys(savedCommands).length) localStorage.setItem(STORAGE_KEYS.commands, JSON.stringify(migratedCommands));
+      if (Number.isInteger(storedLevel) && storedLevel >= 7) localStorage.setItem(STORAGE_KEYS.level, "7");
+    }
+
+    localStorage.setItem(STORAGE_KEYS.campaign, CAMPAIGN_VERSION);
+  }
+
   function loadProgress() {
+    migrateCampaignProgress();
     const savedLevel = Number(localStorage.getItem(STORAGE_KEYS.level));
     if (Number.isInteger(savedLevel) && LEVELS[savedLevel]) state.levelIndex = savedLevel;
     state.completed = new Set(readStoredJson(STORAGE_KEYS.done, []));
@@ -1036,16 +1621,26 @@
     stopTimer();
     state.levelIndex = index;
     state.currentLevel = clone(LEVELS[index]);
-    state.runState = createRunState(state.currentLevel);
+    state.trialIndex = 0;
+    state.runState = createRunState(levelForTrial(state.currentLevel, 0));
     state.commands = [];
     state.compiled = [];
-    state.flat = [];
+    state.runtimeStack = [];
     state.pointer = 0;
-    state.activeFlatIndex = -1;
+    state.attemptActive = false;
+    state.activeBlockId = null;
+    state.activeBlockType = null;
+    state.executionStatus = "Готово";
+    state.sensorPos = null;
+    state.sensorResult = null;
+    state.failurePos = null;
     state.isRunning = false;
     state.insertPath = [];
     state.visualRobot = null;
-    if (blocklyWorkspace) setBlocklyCommands(loadCommandsForLevel(index), { persist: false });
+    if (blocklyWorkspace) {
+      blocklyWorkspace.updateToolbox(buildToolbox(state.currentLevel));
+      setBlocklyCommands(loadCommandsForLevel(index), { persist: false });
+    }
     els.levelSelect.value = String(index);
     els.levelTitle.textContent = `${index + 1}. ${state.currentLevel.name}${state.completed.has(index) ? " ✓" : ""}`;
     els.levelHint.textContent = state.currentLevel.hint;
@@ -1062,6 +1657,74 @@
     renderGrid();
     if (isTeacherAccess) renderSolution();
     if (blocklyWorkspace) syncCommandsFromBlockly();
+    renderLearningStatus();
+  }
+
+  const BLOCKLY_TYPE_BY_COMMAND = {
+    [COMMANDS.MOVE]: "robot_move",
+    [COMMANDS.TURN]: "robot_turn",
+    [COMMANDS.WAIT]: "robot_wait",
+    [COMMANDS.TAKE_KEY]: "robot_take_key",
+    [COMMANDS.OPEN_DOOR]: "robot_open_door",
+    [COMMANDS.REPEAT]: "robot_repeat",
+    [COMMANDS.REPEAT_UNTIL]: "robot_repeat_until",
+    [COMMANDS.IF]: "robot_if",
+    [COMMANDS.IF_ELSE]: "robot_if_else",
+  };
+
+  function buildToolbox(level) {
+    const available = new Set(level.availableBlocks || Object.values(COMMANDS));
+    const movement = [COMMANDS.MOVE, COMMANDS.TURN, COMMANDS.WAIT, COMMANDS.TAKE_KEY, COMMANDS.OPEN_DOOR]
+      .filter((type) => available.has(type))
+      .map((type) => ({ kind: "block", type: BLOCKLY_TYPE_BY_COMMAND[type] }));
+    const logic = [COMMANDS.REPEAT, COMMANDS.REPEAT_UNTIL, COMMANDS.IF, COMMANDS.IF_ELSE]
+      .filter((type) => available.has(type))
+      .map((type) => ({ kind: "block", type: BLOCKLY_TYPE_BY_COMMAND[type] }));
+    const contents = [];
+    if (movement.length) contents.push({ kind: "category", name: "Рух", colour: "#2677d9", contents: movement });
+    if (logic.length) contents.push({ kind: "category", name: "Логіка", colour: "#159b64", contents: logic });
+    return { kind: "categoryToolbox", contents };
+  }
+
+  function currentBlockBudget() {
+    const used = countAuthoredBlocks(state.commands);
+    const limit = Number.isInteger(state.currentLevel.maxBlocks) ? state.currentLevel.maxBlocks : null;
+    return { used, limit, withinLimit: limit === null || used <= limit };
+  }
+
+  function renderLearningStatus() {
+    const budget = currentBlockBudget();
+    if (els.blockBudget) {
+      els.blockBudget.textContent = budget.limit === null ? `Блоки: ${budget.used}` : `Блоки: ${budget.used} / ${budget.limit}`;
+      els.blockBudget.classList.toggle("over-limit", !budget.withinLimit);
+    }
+    if (els.executionStatus) els.executionStatus.textContent = state.executionStatus;
+    if (els.energyStatus) {
+      const hasEnergy = state.runState.energyRemaining !== null;
+      els.energyStatus.hidden = !hasEnergy;
+      if (hasEnergy) {
+        els.energyStatus.textContent = `Енергія: ${state.runState.energyRemaining}`;
+        els.energyStatus.classList.toggle("energy-low", state.runState.energyRemaining <= 2);
+      }
+    }
+    if (els.blocklyDiv) els.blocklyDiv.classList.toggle("is-running", state.isRunning);
+    const runButton = document.getElementById("runBtn");
+    const stepButton = document.getElementById("stepBtn");
+    const pauseButton = document.getElementById("pauseBtn");
+    if (runButton) {
+      runButton.disabled = state.isRunning;
+      runButton.textContent = state.attemptActive && !state.isRunning ? "▶ Продовжити" : "▶ Запуск";
+    }
+    if (stepButton) stepButton.disabled = state.isRunning;
+    if (pauseButton) pauseButton.disabled = !state.isRunning;
+    if (els.levelSelect) els.levelSelect.disabled = state.isRunning;
+  }
+
+  function zeroBlocklyComputeCanvas() {
+    document.querySelectorAll("canvas.blocklyComputeCanvas").forEach((canvas) => {
+      canvas.width = 0;
+      canvas.height = 0;
+    });
   }
 
   function setupBlockly() {
@@ -1072,6 +1735,12 @@
     }
 
     Blockly.defineBlocksWithJsonArray([
+      {
+        type: "robot_start",
+        message0: "коли натиснуто Запуск",
+        nextStatement: null,
+        colour: "#263746",
+      },
       {
         type: "robot_move",
         message0: "рухатися()",
@@ -1086,6 +1755,13 @@
         previousStatement: null,
         nextStatement: null,
         colour: "#d7921f",
+      },
+      {
+        type: "robot_wait",
+        message0: "чекати()",
+        previousStatement: null,
+        nextStatement: null,
+        colour: "#2677d9",
       },
       {
         type: "robot_take_key",
@@ -1112,22 +1788,22 @@
         colour: "#159b64",
       },
       {
+        type: "robot_repeat_until",
+        message0: "повторювати до кристала",
+        message1: "виконати %1",
+        args1: [{ type: "input_statement", name: "DO" }],
+        previousStatement: null,
+        nextStatement: null,
+        colour: "#159b64",
+      },
+      {
         type: "robot_if",
         message0: "якщо %1",
         args0: [
           {
             type: "field_dropdown",
             name: "CONDITION",
-            options: [
-              ["попереду вільно", CONDITIONS.FRONT_CLEAR],
-              ["робот на ключі", CONDITIONS.ON_KEY],
-              ["попереду двері", CONDITIONS.DOOR_AHEAD],
-              ["ключ у робота", CONDITIONS.HAS_KEY],
-              ["попереду безодня", CONDITIONS.ABYSS_AHEAD],
-              ["попереду ворог", CONDITIONS.ENEMY_AHEAD],
-              ["попереду пастка", CONDITIONS.TRAP_AHEAD],
-              ["попереду шлях", CONDITIONS.PATH_AHEAD],
-            ],
+            options: COMMAND_DEFINITIONS[COMMANDS.IF].fields[0].values.map((item) => [item.label, item.value]),
           },
         ],
         message1: "тоді %1",
@@ -1136,34 +1812,28 @@
         nextStatement: null,
         colour: "#7a54cf",
       },
+      {
+        type: "robot_if_else",
+        message0: "якщо %1",
+        args0: [
+          {
+            type: "field_dropdown",
+            name: "CONDITION",
+            options: COMMAND_DEFINITIONS[COMMANDS.IF].fields[0].values.map((item) => [item.label, item.value]),
+          },
+        ],
+        message1: "тоді %1",
+        args1: [{ type: "input_statement", name: "DO" }],
+        message2: "інакше %1",
+        args2: [{ type: "input_statement", name: "ELSE" }],
+        previousStatement: null,
+        nextStatement: null,
+        colour: "#7a54cf",
+      },
     ]);
 
     blocklyWorkspace = Blockly.inject(els.blocklyDiv, {
-      toolbox: {
-        kind: "categoryToolbox",
-        contents: [
-          {
-            kind: "category",
-            name: "Рух",
-            colour: "#2677d9",
-            contents: [
-              { kind: "block", type: "robot_move" },
-              { kind: "block", type: "robot_turn" },
-              { kind: "block", type: "robot_take_key" },
-              { kind: "block", type: "robot_open_door" },
-            ],
-          },
-          {
-            kind: "category",
-            name: "Логіка",
-            colour: "#159b64",
-            contents: [
-              { kind: "block", type: "robot_repeat" },
-              { kind: "block", type: "robot_if" },
-            ],
-          },
-        ],
-      },
+      toolbox: buildToolbox(state.currentLevel),
       media: "vendor/blockly/media/",
       renderer: "zelos",
       scrollbars: true,
@@ -1178,21 +1848,69 @@
         scaleSpeed: 1.08,
       },
     });
-    blocklyWorkspace.addChangeListener(() => {
-      if (suppressBlocklySync) return;
+    // Blockly's hidden measurement canvas is not game content; keep capture tools from selecting it.
+    zeroBlocklyComputeCanvas();
+    suppressBlocklySync = true;
+    ensureStartBlock();
+    suppressBlocklySync = false;
+    blocklyWorkspace.addChangeListener((event) => {
+      if (suppressBlocklySync || event?.isUiEvent) return;
       syncCommandsFromBlockly({ persist: true });
-      state.compiled = [];
-      state.flat = [];
-      state.pointer = 0;
-      state.activeFlatIndex = -1;
+      invalidateRuntime();
+      renderLearningStatus();
     });
     root.codeRobotBlocklyWorkspace = blocklyWorkspace;
-    root.codeRobotDebug = { getCommandsFromBlockly, setBlocklyCommands };
+    root.codeRobotDebug = { getCommandsFromBlockly, setBlocklyCommands, ensureStartBlock };
+  }
+
+  function ensureStartBlock() {
+    if (!blocklyWorkspace) return null;
+    let start = blocklyWorkspace.getBlocksByType("robot_start", false)[0];
+    if (!start) {
+      start = blocklyWorkspace.newBlock("robot_start");
+      start.initSvg();
+      start.render();
+      start.moveBy(24, 24);
+    }
+    start.setDeletable(false);
+    start.setMovable(false);
+    return start;
+  }
+
+  function connectedBlockIds() {
+    const ids = new Set();
+    const start = ensureStartBlock();
+    if (!start) return ids;
+    ids.add(start.id);
+    function visitChain(block) {
+      let cursor = block;
+      while (cursor) {
+        ids.add(cursor.id);
+        const body = cursor.getInputTargetBlock?.("DO");
+        if (body) visitChain(body);
+        const elseBody = cursor.getInputTargetBlock?.("ELSE");
+        if (elseBody) visitChain(elseBody);
+        cursor = cursor.getNextBlock();
+      }
+    }
+    visitChain(start.getNextBlock());
+    return ids;
+  }
+
+  function markDisconnectedBlocks() {
+    if (!blocklyWorkspace) return;
+    const connected = connectedBlockIds();
+    for (const block of blocklyWorkspace.getAllBlocks(false)) {
+      if (block.type === "robot_start") continue;
+      block.getSvgRoot()?.classList.toggle("is-disconnected", !connected.has(block.id));
+    }
   }
 
   function getCommandsFromBlockly() {
     if (!blocklyWorkspace) return clone(state.commands);
-    return blocklyWorkspace.getTopBlocks(true).flatMap(blockToCommandChain);
+    const firstBlock = ensureStartBlock()?.getNextBlock();
+    markDisconnectedBlocks();
+    return firstBlock ? blockToCommandChain(firstBlock) : [];
   }
 
   function blockToCommandChain(block) {
@@ -1207,19 +1925,37 @@
   }
 
   function blockToCommand(block) {
-    if (block.type === "robot_move") return b(COMMANDS.MOVE);
-    if (block.type === "robot_turn") return b(COMMANDS.TURN, { direction: block.getFieldValue("DIRECTION") });
-    if (block.type === "robot_take_key") return b(COMMANDS.TAKE_KEY);
-    if (block.type === "robot_open_door") return b(COMMANDS.OPEN_DOOR);
+    let command = null;
+    if (block.type === "robot_move") command = b(COMMANDS.MOVE);
+    if (block.type === "robot_turn") command = b(COMMANDS.TURN, { direction: block.getFieldValue("DIRECTION") });
+    if (block.type === "robot_wait") command = b(COMMANDS.WAIT);
+    if (block.type === "robot_take_key") command = b(COMMANDS.TAKE_KEY);
+    if (block.type === "robot_open_door") command = b(COMMANDS.OPEN_DOOR);
     if (block.type === "robot_repeat") {
       const firstBodyBlock = block.getInputTargetBlock("DO");
-      return b(COMMANDS.REPEAT, { times: Number(block.getFieldValue("TIMES")) }, firstBodyBlock ? blockToCommandChain(firstBodyBlock) : []);
+      command = b(COMMANDS.REPEAT, { times: Number(block.getFieldValue("TIMES")) }, firstBodyBlock ? blockToCommandChain(firstBodyBlock) : []);
+    }
+    if (block.type === "robot_repeat_until") {
+      const firstBodyBlock = block.getInputTargetBlock("DO");
+      command = b(COMMANDS.REPEAT_UNTIL, {}, firstBodyBlock ? blockToCommandChain(firstBodyBlock) : []);
     }
     if (block.type === "robot_if") {
       const firstBodyBlock = block.getInputTargetBlock("DO");
-      return b(COMMANDS.IF, { condition: block.getFieldValue("CONDITION") }, firstBodyBlock ? blockToCommandChain(firstBodyBlock) : []);
+      command = b(COMMANDS.IF, { condition: block.getFieldValue("CONDITION") }, firstBodyBlock ? blockToCommandChain(firstBodyBlock) : []);
     }
-    return null;
+    if (block.type === "robot_if_else") {
+      const firstBodyBlock = block.getInputTargetBlock("DO");
+      const firstElseBlock = block.getInputTargetBlock("ELSE");
+      command = b(
+        COMMANDS.IF_ELSE,
+        { condition: block.getFieldValue("CONDITION") },
+        firstBodyBlock ? blockToCommandChain(firstBodyBlock) : [],
+        firstElseBlock ? blockToCommandChain(firstElseBlock) : [],
+      );
+    }
+    if (!command) return null;
+    Object.defineProperty(command, "blockId", { value: block.id, enumerable: false });
+    return command;
   }
 
   function syncCommandsFromBlockly(options = {}) {
@@ -1232,6 +1968,7 @@
     if (!blocklyWorkspace) return;
     suppressBlocklySync = true;
     blocklyWorkspace.clear();
+    ensureStartBlock();
     suppressBlocklySync = false;
     syncCommandsFromBlockly({ persist: options.persist });
   }
@@ -1245,10 +1982,10 @@
     }
     suppressBlocklySync = true;
     blocklyWorkspace.clear();
-    let previous = null;
+    let previous = ensureStartBlock();
     commands.forEach((command, index) => {
       const block = createBlocklyBlock(command);
-      block.moveBy(24, 24 + index * 48);
+      block.moveBy(190, 24 + index * 48);
       if (previous?.nextConnection && block.previousConnection) previous.nextConnection.connect(block.previousConnection);
       previous = block;
     });
@@ -1256,42 +1993,43 @@
     syncCommandsFromBlockly({ persist: shouldPersist });
     if (shouldPersist && options.action && options.action !== "codeChanged") recordAction(options.action, { commandCount: state.commands.length });
     root.Blockly.svgResize(blocklyWorkspace);
+    window.setTimeout(zeroBlocklyComputeCanvas, 0);
   }
 
   function createBlocklyBlock(command) {
-    const typeMap = {
-      [COMMANDS.MOVE]: "robot_move",
-      [COMMANDS.TURN]: "robot_turn",
-      [COMMANDS.TAKE_KEY]: "robot_take_key",
-      [COMMANDS.OPEN_DOOR]: "robot_open_door",
-      [COMMANDS.REPEAT]: "robot_repeat",
-      [COMMANDS.IF]: "robot_if",
-    };
-    const block = blocklyWorkspace.newBlock(typeMap[command.type]);
+    const block = blocklyWorkspace.newBlock(BLOCKLY_TYPE_BY_COMMAND[command.type]);
     if (command.type === COMMANDS.TURN) block.setFieldValue(command.args.direction, "DIRECTION");
     if (command.type === COMMANDS.REPEAT) block.setFieldValue(String(command.args.times), "TIMES");
-    if (command.type === COMMANDS.IF) block.setFieldValue(command.args.condition, "CONDITION");
+    if ([COMMANDS.IF, COMMANDS.IF_ELSE].includes(command.type)) {
+      const condition = command.args.condition === CONDITIONS.FRONT_CLEAR ? CONDITIONS.PATH_AHEAD : command.args.condition;
+      block.setFieldValue(condition, "CONDITION");
+    }
     block.initSvg();
     block.render();
-    if (command.body?.length) {
-      let previousChild = null;
-      command.body.forEach((child) => {
-        const childBlock = createBlocklyBlock(child);
-        if (previousChild?.nextConnection && childBlock.previousConnection) {
-          previousChild.nextConnection.connect(childBlock.previousConnection);
-        } else {
-          block.getInput("DO").connection.connect(childBlock.previousConnection);
-        }
-        previousChild = childBlock;
-      });
-    }
+    connectBlocklyBranch(block, "DO", command.body || []);
+    connectBlocklyBranch(block, "ELSE", command.elseBody || []);
     return block;
+  }
+
+  function connectBlocklyBranch(block, inputName, commands) {
+    if (!commands.length || !block.getInput(inputName)) return;
+    let previousChild = null;
+    commands.forEach((child) => {
+      const childBlock = createBlocklyBlock(child);
+      if (previousChild?.nextConnection && childBlock.previousConnection) {
+        previousChild.nextConnection.connect(childBlock.previousConnection);
+      } else {
+        block.getInput(inputName).connection.connect(childBlock.previousConnection);
+      }
+      previousChild = childBlock;
+    });
   }
 
   function renderGrid() {
     els.grid.innerHTML = "";
-    const width = levelWidth(state.currentLevel);
-    const height = levelHeight(state.currentLevel);
+    const level = state.runState.level;
+    const width = levelWidth(level);
+    const height = levelHeight(level);
     els.grid.style.setProperty("--grid-cols", width);
     els.grid.style.setProperty("--grid-rows", height);
     els.grid.style.aspectRatio = `${width} / ${height}`;
@@ -1304,18 +2042,37 @@
         if ((x * 3 + y * 5) % 11 === 0) cell.classList.add("small-crack");
         cell.dataset.x = String(x);
         cell.dataset.y = String(y);
-        if (isAbyss(state.currentLevel, pos)) cell.classList.add("terrain-abyss");
-        if (hasTile(state.currentLevel, "water", pos)) cell.classList.add("terrain-water");
-        if (hasTile(state.currentLevel, "lava", pos)) cell.classList.add("terrain-lava");
-        if (isBridge(state.currentLevel, pos)) addTileToken(cell, "bridge", "міст", "=");
-        if (isWall(state.currentLevel, pos)) cell.classList.add("wall-cell");
-        if (samePos(state.currentLevel.door, pos)) addSprite(cell, state.runState.doorOpen ? assetMap.doorOpen : assetMap.doorClosed, "двері", "door");
-        if (state.currentLevel.key && !state.runState.keyTaken && samePos(state.currentLevel.key, pos)) addSprite(cell, assetMap.key, "ключ", "key");
-        if (samePos(state.currentLevel.crystal, pos)) addSprite(cell, assetMap.crystal, "кристал", "crystal");
+        if (state.runState.trail.some((point) => samePos(point, pos))) cell.classList.add("robot-trail");
+        if (samePos(state.sensorPos, pos)) cell.classList.add("sensor-check", state.sensorResult ? "sensor-true" : "sensor-false");
+        if (samePos(state.failurePos, pos)) cell.classList.add("failure-cell");
+        if (isAbyss(level, pos, state.runState)) cell.classList.add("terrain-abyss");
+        if (hasTile(level, "water", pos)) cell.classList.add("terrain-water");
+        if (hasTile(level, "lava", pos)) cell.classList.add("terrain-lava");
+        if ((level.movingEnemies || []).some((enemy) => enemy.path.some((tile) => samePos(tile, pos)))) {
+          cell.classList.add("patrol-track");
+        }
+        if (isBridge(level, pos, state.runState)) addTileToken(cell, "bridge", "міст", "=");
+        else if (toggleBridgeAt(level, pos)) addTileToken(cell, "bridge-off", "вимкнений міст", "×");
+        if (isWall(level, pos)) cell.classList.add("wall-cell");
+        const button = buttonAt(level, pos);
+        if (button) {
+          const pressed = isButtonPressed(state.runState, button.id);
+          addTileToken(cell, `floor-button ${pressed ? "pressed" : ""}`, pressed ? "кнопка активована" : "кнопка", "●");
+        }
+        const gate = gateAt(level, pos);
+        if (gate) {
+          const open = isButtonPressed(state.runState, gate.buttonId);
+          addTileToken(cell, `gate ${open ? "open" : "closed"}`, open ? "відкриті ворота" : "закриті ворота", open ? "↔" : "▥");
+        }
+        if (samePos(level.door, pos)) addSprite(cell, state.runState.doorOpen ? assetMap.doorOpen : assetMap.doorClosed, "двері", "door");
+        if (level.key && !state.runState.keyTaken && samePos(level.key, pos)) addSprite(cell, assetMap.key, "ключ", "key");
+        if (samePos(level.crystal, pos)) addSprite(cell, assetMap.crystal, "кристал", "crystal");
         const numberedCrystal = numberedCrystalAt(state.runState, pos);
         if (numberedCrystal) addNumberedCrystal(cell, numberedCrystal);
-        if (hasTile(state.currentLevel, "traps", pos)) addTileToken(cell, "trap", "пастка", "×");
-        if (hasTile(state.currentLevel, "enemies", pos)) addTileToken(cell, "enemy", "ворог", "!");
+        if (hasTile(level, "traps", pos)) addTileToken(cell, "trap", "пастка", "×");
+        if (hasTile(level, "enemies", pos)) addTileToken(cell, "enemy", "ворог", "!");
+        if (movingEnemyAt(state.runState, pos)) addTileToken(cell, "enemy moving", "рухомий патруль", "↕");
+        if (crateIndexAt(state.runState, pos) >= 0) addTileToken(cell, "crate", "ящик", "▣");
         els.grid.appendChild(cell);
       }
     }
@@ -1429,7 +2186,7 @@
     const definition = COMMAND_DEFINITIONS[node.type];
     const block = document.createElement("div");
     block.className = `code-block ${definition.color} ${definition.kind}`;
-    if (state.flat[state.activeFlatIndex] === node) block.classList.add("active");
+    if (node.blockId && node.blockId === state.activeBlockId) block.classList.add("active");
 
     const head = document.createElement("div");
     head.className = "block-head";
@@ -1595,52 +2352,109 @@
     els.insertionLabel.textContent = state.insertPath.length ? "Додавання: всередину блоку" : "Додавання: в алгоритм";
   }
 
-  function planRuntimeSteps(nodes, level) {
-    const planningState = createRunState(level);
-    const flat = [];
+  function highlightActiveBlock(node = null) {
+    state.activeBlockId = node?.blockId || null;
+    state.activeBlockType = node?.type || null;
+    if (blocklyWorkspace?.highlightBlock) blocklyWorkspace.highlightBlock(state.activeBlockId);
+  }
 
-    function walk(list) {
-      for (const node of list) {
+  function invalidateRuntime() {
+    stopTimer();
+    state.isRunning = false;
+    state.attemptActive = false;
+    state.compiled = [];
+    state.runtimeStack = [];
+    state.pointer = 0;
+    state.sensorPos = null;
+    state.sensorResult = null;
+    state.failurePos = null;
+    state.executionStatus = "Готово";
+    highlightActiveBlock();
+  }
+
+  function startTrial(index) {
+    state.trialIndex = index;
+    state.runState = createRunState(levelForTrial(state.currentLevel, index));
+    state.runtimeStack = [{ kind: "sequence", nodes: state.compiled, index: 0 }];
+    state.pointer = 0;
+    state.sensorPos = null;
+    state.sensorResult = null;
+    state.failurePos = null;
+    state.visualRobot = null;
+    highlightActiveBlock();
+  }
+
+  function nextRuntimeEvent() {
+    while (state.runtimeStack.length) {
+      const frame = state.runtimeStack[state.runtimeStack.length - 1];
+      if (frame.kind === "sequence") {
+        if (frame.index >= frame.nodes.length) {
+          state.runtimeStack.pop();
+          continue;
+        }
+        const node = frame.nodes[frame.index];
+        frame.index += 1;
         if (node.type === COMMANDS.REPEAT) {
-          for (let i = 0; i < node.args.times; i += 1) {
-            if (!walk(node.body)) return false;
-          }
+          state.runtimeStack.push({ kind: "repeat", node, iteration: 0 });
           continue;
         }
-        if (node.type === COMMANDS.IF) {
-          if (evaluateCondition(planningState, node.args.condition) && !walk(node.body)) return false;
+        if (node.type === COMMANDS.REPEAT_UNTIL) {
+          state.runtimeStack.push({ kind: "repeatUntil", node, iteration: 0 });
           continue;
         }
-
-        flat.push(node);
-        const result = executePrimitive(planningState, node);
-        if (!result.ok || planningState.status === "success") return false;
+        if (node.type === COMMANDS.IF || node.type === COMMANDS.IF_ELSE) {
+          const passed = evaluateCondition(state.runState, node.args.condition);
+          const branch = passed ? node.body : node.elseBody;
+          if (branch?.length) state.runtimeStack.push({ kind: "sequence", nodes: branch, index: 0 });
+          return { kind: "condition", node, passed };
+        }
+        return { kind: "primitive", node };
       }
-      return true;
+      if (frame.kind === "repeat") {
+        if (frame.iteration >= frame.node.args.times) {
+          state.runtimeStack.pop();
+          continue;
+        }
+        frame.iteration += 1;
+        state.runtimeStack.push({ kind: "sequence", nodes: frame.node.body, index: 0 });
+        return { kind: "repeat", node: frame.node, iteration: frame.iteration, total: frame.node.args.times };
+      }
+      if (checkWin(state.runState)) {
+        state.runtimeStack.pop();
+        continue;
+      }
+      if (frame.iteration >= 200) {
+        state.runtimeStack.pop();
+        return { kind: "runtimeError", node: frame.node, message: "Повторення не дісталося до кристала. Перевір умови всередині." };
+      }
+      frame.iteration += 1;
+      state.runtimeStack.push({ kind: "sequence", nodes: frame.node.body, index: 0 });
+      return { kind: "repeatUntil", node: frame.node, iteration: frame.iteration };
     }
-
-    walk(nodes);
-    return flat;
+    return null;
   }
 
   function prepareRun() {
     try {
       syncCommandsFromBlockly();
       state.compiled = compileProgram(state.commands);
-      state.runState = createRunState(state.currentLevel);
-      state.flat = planRuntimeSteps(state.compiled, state.currentLevel);
-      state.pointer = 0;
-      state.activeFlatIndex = -1;
+      state.attemptActive = true;
+      startTrial(0);
+      state.executionStatus = levelTrialCount(state.currentLevel) > 1 ? `Перевірка 1/${levelTrialCount(state.currentLevel)}` : "Запуск";
+      state.nextDelay = STEP_DELAY;
+      recordAction("attemptStarted", { blockCount: countAuthoredBlocks(state.commands), trialCount: levelTrialCount(state.currentLevel) });
       return true;
     } catch (error) {
+      state.attemptActive = false;
       showMessage(error.message, "error");
       return false;
     }
   }
 
   function runProgram() {
-    if (!syncCommandsFromBlockly().length) return showMessage("Додай блок.", "error");
-    if (!state.pointer && !prepareRun()) return;
+    if (state.isRunning) return;
+    if (!syncCommandsFromBlockly().length) return showMessage("Приєднай блок до «Запуск».", "error");
+    if (!state.attemptActive && !prepareRun()) return;
     state.isRunning = true;
     renderAll();
     scheduleNext();
@@ -1651,28 +2465,118 @@
     state.timer = window.setTimeout(() => {
       const ok = stepProgram(true);
       if (ok && state.isRunning) scheduleNext();
-    }, STEP_DELAY);
+    }, state.nextDelay);
+  }
+
+  function conditionUsesFront(condition) {
+    return [
+      CONDITIONS.PATH_AHEAD,
+      CONDITIONS.ABYSS_AHEAD,
+      CONDITIONS.ENEMY_AHEAD,
+      CONDITIONS.TRAP_AHEAD,
+      CONDITIONS.DOOR_AHEAD,
+      CONDITIONS.PATH_LEFT,
+      CONDITIONS.PATH_RIGHT,
+      CONDITIONS.FRONT_CLEAR,
+    ].includes(condition);
   }
 
   function stepProgram(fromAuto = false) {
-    if (!state.flat.length && !prepareRun()) return false;
-    if (state.pointer >= state.flat.length) return finishIncomplete();
-    const command = state.flat[state.pointer];
-    state.activeFlatIndex = state.pointer;
+    if (!state.attemptActive && !prepareRun()) return false;
+    const event = nextRuntimeEvent();
+    if (!event) return finishIncomplete();
+
     state.pointer += 1;
-    const result = executePrimitive(state.runState, command);
-    renderGrid();
-    showMessage(result.message, result.ok ? "neutral" : "error");
-    if (!result.ok) return stopRun(false);
-    if (checkWin(state.runState)) {
-      state.completed.add(state.levelIndex);
-      saveProgress();
-      refreshLevelLocks();
-      showMessage("Місію виконано!", "success");
+    state.sensorPos = null;
+    state.sensorResult = null;
+    state.failurePos = null;
+    highlightActiveBlock(event.node);
+
+    if (event.kind === "runtimeError") {
+      state.failurePos = { ...state.runState.robot };
+      state.executionStatus = "Перевір повторення";
+      state.attemptActive = false;
+      recordAction("attemptFinished", { status: "error", message: event.message, blockCount: countAuthoredBlocks(state.commands) });
+      showMessage(event.message, "error");
       return stopRun(false);
     }
+
+    if (event.kind === "repeat") {
+      state.executionStatus = `Повторення ${event.iteration}/${event.total}`;
+      state.nextDelay = CONTROL_DELAY;
+      showMessage(state.executionStatus, "neutral");
+      renderAll();
+      return true;
+    }
+
+    if (event.kind === "repeatUntil") {
+      state.executionStatus = `Пошук кристала: коло ${event.iteration}`;
+      state.nextDelay = CONTROL_DELAY;
+      showMessage(state.executionStatus, "neutral");
+      renderAll();
+      return true;
+    }
+
+    if (event.kind === "condition") {
+      if (conditionUsesFront(event.node.args.condition)) {
+        state.sensorPos = conditionTargetPosition(state.runState.robot, event.node.args.condition);
+      }
+      state.sensorResult = event.passed;
+      state.executionStatus = `${conditionLabel(event.node.args.condition)}: ${event.passed ? "так" : "ні"}`;
+      state.nextDelay = CONTROL_DELAY;
+      showMessage(state.executionStatus, "neutral");
+      renderAll();
+      return true;
+    }
+
+    state.executionStatus = blockText(event.node);
+    state.nextDelay = [COMMANDS.MOVE, COMMANDS.WAIT].includes(event.node.type) ? STEP_DELAY : CONTROL_DELAY;
+    const result = executePrimitive(state.runState, event.node);
+    if (!result.ok) state.failurePos = result.target || null;
+    showMessage(result.message, result.ok ? "neutral" : "error");
+    renderAll();
+    if (!result.ok) {
+      state.attemptActive = false;
+      recordAction("attemptFinished", { status: "error", message: result.message, blockCount: countAuthoredBlocks(state.commands) });
+      return stopRun(false);
+    }
+    if (checkWin(state.runState)) return finishSuccessfulTrial();
     if (!fromAuto) showMessage(result.message, "neutral");
     return true;
+  }
+
+  function finishSuccessfulTrial() {
+    const totalTrials = levelTrialCount(state.currentLevel);
+    if (state.trialIndex + 1 < totalTrials) {
+      const nextTrial = state.trialIndex + 1;
+      startTrial(nextTrial);
+      const label = state.runState.level.trials?.[nextTrial]?.label || state.runState.level.label || "";
+      state.executionStatus = `Перевірка ${nextTrial + 1}/${totalTrials}`;
+      showMessage(`${state.executionStatus}${label ? `: ${label}` : ""}.`, "success");
+      renderAll();
+      state.nextDelay = STEP_DELAY;
+      return true;
+    }
+
+    const budget = currentBlockBudget();
+    state.attemptActive = false;
+    if (!budget.withinLimit) {
+      const message = `Маршрут працює! Скороти код до ${budget.limit} блоків. Зараз: ${budget.used}.`;
+      state.executionStatus = "Скороти код";
+      highlightActiveBlock();
+      recordAction("attemptFinished", { status: "overBudget", message, blockCount: budget.used, limit: budget.limit });
+      showMessage(message, "error");
+      return stopRun(false);
+    }
+
+    state.completed.add(state.levelIndex);
+    saveProgress();
+    refreshLevelLocks();
+    state.executionStatus = "Виконано";
+    highlightActiveBlock();
+    recordAction("attemptFinished", { status: "success", blockCount: budget.used, trialCount: totalTrials });
+    showMessage("Місію виконано!", "success");
+    return stopRun(false);
   }
 
   function stopRun(result) {
@@ -1684,29 +2588,41 @@
 
   function finishIncomplete() {
     state.isRunning = false;
-    state.activeFlatIndex = -1;
+    state.attemptActive = false;
+    state.executionStatus = "Код закінчився";
+    highlightActiveBlock();
     stopTimer();
+    const message = incompleteMessage(state.runState);
+    recordAction("attemptFinished", { status: "incomplete", message, blockCount: countAuthoredBlocks(state.commands) });
     renderAll();
-    showMessage("Алгоритм закінчився.", "neutral");
+    showMessage(message, "neutral");
     return false;
   }
 
   function pauseProgram() {
+    if (!state.isRunning) return;
     state.isRunning = false;
     stopTimer();
+    state.executionStatus = "Пауза";
     renderAll();
     showMessage("Пауза.", "neutral");
   }
 
   function resetLevel(clearCode = false) {
     stopTimer();
-    state.runState = createRunState(state.currentLevel);
+    state.trialIndex = 0;
+    state.runState = createRunState(levelForTrial(state.currentLevel, 0));
     state.compiled = [];
-    state.flat = [];
+    state.runtimeStack = [];
     state.pointer = 0;
-    state.activeFlatIndex = -1;
+    state.attemptActive = false;
     state.isRunning = false;
+    state.executionStatus = "Готово";
+    state.sensorPos = null;
+    state.sensorResult = null;
+    state.failurePos = null;
     state.visualRobot = null;
+    highlightActiveBlock();
     if (clearCode) clearBlocklyWorkspace();
     syncCommandsFromBlockly();
     renderAll();
@@ -1729,6 +2645,11 @@
       inner.textContent = ` { ${node.body.map(blockText).join("; ")} }`;
       chip.appendChild(inner);
     }
+    if (node.elseBody?.length) {
+      const alternate = document.createElement("span");
+      alternate.textContent = ` інакше { ${node.elseBody.map(blockText).join("; ")} }`;
+      chip.appendChild(alternate);
+    }
     return chip;
   }
 
@@ -1736,8 +2657,11 @@
     const definition = COMMAND_DEFINITIONS[node.type];
     if (node.type === COMMANDS.MOVE) return "рухатися()";
     if (node.type === COMMANDS.TURN) return `повернути(${node.args.direction === "left" ? "ліворуч" : "праворуч"})`;
+    if (node.type === COMMANDS.WAIT) return "чекати()";
     if (node.type === COMMANDS.REPEAT) return `repeat(${node.args.times})`;
+    if (node.type === COMMANDS.REPEAT_UNTIL) return "repeatUntil(кристал)";
     if (node.type === COMMANDS.IF) return `if(${conditionLabel(node.args.condition)})`;
+    if (node.type === COMMANDS.IF_ELSE) return `ifElse(${conditionLabel(node.args.condition)})`;
     return definition.label;
   }
 
@@ -1797,9 +2721,10 @@
 
   function renderGameToText() {
     syncCommandsFromBlockly();
+    const level = state.runState.level;
     return JSON.stringify({
       note: "Origin is top-left. x grows right, y grows down.",
-      grid: { width: levelWidth(state.currentLevel), height: levelHeight(state.currentLevel) },
+      grid: { width: levelWidth(level), height: levelHeight(level) },
       level: state.currentLevel.name,
       robot: state.runState.robot,
       hasKey: state.runState.hasKey,
@@ -1807,22 +2732,45 @@
       doorOpen: state.runState.doorOpen,
       collectedCrystals: state.runState.collectedCrystals,
       nextCrystalNumber: state.runState.nextCrystalNumber,
+      energyRemaining: state.runState.energyRemaining,
+      crates: state.runState.crates,
+      pressedButtons: [...state.runState.pressedButtons],
+      movingEnemies: state.runState.movingEnemies.map((enemy) => ({
+        position: enemy.path[enemy.index],
+        index: enemy.index,
+        direction: enemy.direction,
+      })),
       commandCount: state.commands.length,
-      compiledStepCount: state.flat.length,
+      authoredBlockCount: countAuthoredBlocks(state.commands),
+      blockBudget: currentBlockBudget(),
+      compiledStepCount: state.pointer,
       pointer: state.pointer,
+      trial: { current: state.trialIndex + 1, total: levelTrialCount(state.currentLevel) },
+      isRunning: state.isRunning,
+      attemptActive: state.attemptActive,
+      activeBlockId: state.activeBlockId,
+      activeBlockType: state.activeBlockType,
+      executionStatus: state.executionStatus,
+      sensor: state.sensorPos ? { position: state.sensorPos, result: state.sensorResult } : null,
+      failure: state.failurePos,
+      trail: state.runState.trail,
       message: els.message.textContent,
       insertPath: state.insertPath,
-      walls: state.currentLevel.walls,
-      key: state.currentLevel.key,
-      door: state.currentLevel.door,
-      crystal: state.currentLevel.crystal,
-      water: state.currentLevel.water || [],
-      lava: state.currentLevel.lava || [],
-      bridges: state.currentLevel.bridges || [],
-      enemies: state.currentLevel.enemies || [],
-      traps: state.currentLevel.traps || [],
-      numberedCrystals: state.currentLevel.numberedCrystals || [],
-      safePath: state.currentLevel.safePath || [],
+      walls: level.walls,
+      key: level.key,
+      door: level.door,
+      crystal: level.crystal,
+      water: level.water || [],
+      lava: level.lava || [],
+      bridges: level.bridges || [],
+      toggleBridges: level.toggleBridges || [],
+      buttons: level.buttons || [],
+      gates: level.gates || [],
+      patrolPaths: (level.movingEnemies || []).map((enemy) => enemy.path),
+      enemies: level.enemies || [],
+      traps: level.traps || [],
+      numberedCrystals: level.numberedCrystals || [],
+      safePath: level.safePath || [],
     });
   }
 
@@ -1841,6 +2789,7 @@
       renderGrid();
     };
     loadLevel(state.levelIndex);
+    window.setTimeout(zeroBlocklyComputeCanvas, 0);
   }
 
   init().catch((error) => {
