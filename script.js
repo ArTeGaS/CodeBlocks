@@ -11,7 +11,6 @@
     done: "codeRobot.v2.doneLevels",
     commands: "codeRobot.v2.commandsByLevel",
     actionLog: "codeRobot.v2.actionLog",
-    teacherAccess: "codeRobot.v2.teacherAccess",
     campaign: "codeRobot.v2.campaignVersion",
   };
 
@@ -1481,38 +1480,8 @@
     return ["localhost", "127.0.0.1", "::1"].includes(root.location?.hostname);
   }
 
-  function readTeacherHashMode() {
-    const hash = root.location?.hash?.toLowerCase() || "";
-    if (hash === "#teacher" || hash === "#admin" || hash.includes("teacher=1") || hash.includes("admin=1")) return "teacher";
-    if (hash === "#student" || hash.includes("student=1")) return "student";
-    return null;
-  }
-
-  function isRememberedTeacherBrowser() {
-    try {
-      return localStorage.getItem(STORAGE_KEYS.teacherAccess) === "1";
-    } catch {
-      return false;
-    }
-  }
-
   async function resolveTeacherAccess() {
-    const hashMode = readTeacherHashMode();
-    if (hashMode === "teacher") {
-      try {
-        localStorage.setItem(STORAGE_KEYS.teacherAccess, "1");
-      } catch {
-      }
-      return true;
-    }
-    if (hashMode === "student") {
-      try {
-        localStorage.removeItem(STORAGE_KEYS.teacherAccess);
-      } catch {
-      }
-      return false;
-    }
-    return isTeacherHost() || isRememberedTeacherBrowser();
+    return isTeacherHost();
   }
 
   function applyAccessMode(teacher) {
